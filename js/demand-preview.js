@@ -139,7 +139,7 @@ function trackRecordCell(f) {
     : (f.modelLabel || f.model);
   return '<span class="rating-wrap"' + tipAttr(tooltip) + '>' +
     '<span class="rating rating-' + r.cls + '">' + r.word + '</span>' +
-    '<span class="tip-dot" aria-hidden="true">&#9432;</span>' +
+    '<img class="tip-dot" src="assets/cow-16.png" alt="" aria-hidden="true" />' +
     '</span>' +
     '<div class="sub">' + r.note + '</div>';
 }
