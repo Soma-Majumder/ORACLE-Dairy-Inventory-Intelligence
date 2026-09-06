@@ -406,6 +406,7 @@ export function forecastProduct(product, opts = {}) {
     model: fc.model,
     modelLabel: MODEL_LABELS[fc.model] || fc.model,
     params: fc.params,
+    sigma: fc.sigma,            // one-step residual std — used by v3 stockout sim
     horizon,
     level,
     periods: future,

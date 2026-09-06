@@ -1,5 +1,5 @@
 // ORACLE — dashboard shell: app state, rendering, and DOM wiring.
-import { daysBetween, escapeHtml } from './utils.js';
+import { daysBetween, escapeHtml, toNumber } from './utils.js';
 import {
   IngestError,
   readFileToWorkbook,
@@ -10,6 +10,7 @@ import {
 } from './ingest.js';
 import { buildDemandSeries } from './timeseries.js';
 import { renderDemandPreview } from './demand-preview.js';
+import { renderStockoutView } from './stockout-view.js';
 
 const state = {
   rows: [],
@@ -17,8 +18,31 @@ const state = {
   fileName: '',
   reviewed: new Set(),
   referenceDate: null,
-  demand: null   // output of buildDemandSeries when the bundled dataset is loaded
+  demand: null,          // output of buildDemandSeries when the bundled dataset is loaded
+  stockByProduct: null   // current stock summed across brands, keyed by base product name
 };
+
+// "Milk (Amul)" -> "Milk"
+function baseProductName(name) {
+  return String(name).replace(/\s*\([^()]*\)\s*$/, '').trim();
+}
+
+function sumStockByProduct(aggregatedRows) {
+  const map = {};
+  for (const row of aggregatedRows) {
+    const base = baseProductName(row['Product Name']);
+    const stock = toNumber(row['Current Stock']);
+    if (!base || stock == null) continue;
+    map[base] = (map[base] || 0) + stock;
+  }
+  return map;
+}
+
+function renderPredictivePanels() {
+  renderDemandPreview(state.demand);
+  const horizon = Number($('stockoutHorizon') && $('stockoutHorizon').value) || 30;
+  renderStockoutView(state.demand, state.stockByProduct, horizon);
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -56,7 +80,8 @@ async function loadFile(file) {
     const json = workbookToJson(workbook);
     const normalized = normalizeInventoryRows(json);
     state.demand = null;
-    renderDemandPreview(null);
+    state.stockByProduct = null;
+    renderPredictivePanels();
     applyInventory(normalized, file.name);
   } catch (err) {
     showError(err instanceof IngestError ? err.message
@@ -75,11 +100,12 @@ async function loadOpenSourceDataset() {
     const label = 'dairy_dataset.csv (' + aggregated.length +
       ' products by brand, latest batch each' + asOf + ')';
 
-    // Demand history (v2 data-prep).
+    // Demand history (v2 data-prep) + current stock by product (v3 join).
     state.demand = buildDemandSeries(rawRows, { bucket: 'month' });
+    state.stockByProduct = sumStockByProduct(aggregated);
 
     applyInventory(normalized, label, referenceDate);
-    renderDemandPreview(state.demand);
+    renderPredictivePanels();
   } catch (err) {
     showError(err instanceof IngestError ? err.message
       : 'Could not load the open-source dataset.');
@@ -397,14 +423,20 @@ function init() {
   $('templateBtn').addEventListener('click', downloadTemplate);
   $('newFileBtn').addEventListener('click', () => {
     state.rows = []; state.columns = {}; state.reviewed = new Set();
-    state.referenceDate = null; state.demand = null; fileInput.value = '';
+    state.referenceDate = null; state.demand = null; state.stockByProduct = null;
+    fileInput.value = '';
     clearError();
-    renderDemandPreview(null);
+    renderPredictivePanels();
     $('dashboard').classList.add('hidden');
     $('uploadCard').classList.remove('hidden');
   });
   $('expiryDays').addEventListener('input', render);
   $('stockoutDays').addEventListener('input', render);
+  if ($('stockoutHorizon')) {
+    $('stockoutHorizon').addEventListener('input', () => {
+      renderStockoutView(state.demand, state.stockByProduct, Number($('stockoutHorizon').value) || 30);
+    });
+  }
   $('dashboard').addEventListener('click', (e) => {
     const target = e.target.closest('[data-action]');
     if (!target) return;

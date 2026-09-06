@@ -205,6 +205,17 @@
   #demandBody .ok { color: var(--good); font-weight: 700; }
   #demandBody .muted { color: var(--text-muted); }
   #demandBody tbody td:nth-child(4) { white-space: nowrap; }
+
+  /* Stockout probability (v3) */
+  #stockoutProbBody table { min-width: 720px; }
+  #stockoutProbBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 2px; white-space: nowrap; }
+  #stockoutProbBody .muted { color: var(--text-muted); }
+  .pbar { margin-top: 5px; height: 5px; border-radius: 3px; background: var(--gridline); overflow: hidden; }
+  .pbar-fill { display: block; height: 100%; border-radius: 3px; }
+  .pbar-fill.risk-critical { background: var(--critical); }
+  .pbar-fill.risk-high { background: var(--serious); }
+  .pbar-fill.risk-medium { background: var(--warning); }
+  .pbar-fill.risk-low { background: var(--good); }
   td.spark-cell { width: 230px; padding-top: 6px; padding-bottom: 6px; }
   svg.spark { display: block; overflow: visible; }
   svg.spark .spark-hist { fill: none; stroke: var(--series-blue); stroke-width: 1.5; }
@@ -337,6 +348,17 @@
       <h2 class="days-until-run-out"><span class="dot neutral"></span>Demand Forecast <span class="tag">v2</span></h2>
       <p class="subtitle" id="demandSubtitle"></p>
       <div class="card" id="demandBody"></div>
+    </section>
+
+    <section class="category hidden" id="sectionStockoutProb">
+      <h2 class="days-until-run-out"><span class="dot critical"></span>Stockout Probability <span class="tag">v3</span></h2>
+      <p class="subtitle" id="stockoutProbSubtitle"></p>
+      <div class="controls-row" style="margin: 0 0 12px;">
+        Simulation horizon
+        <input type="number" id="stockoutHorizon" min="7" max="180" value="30" />
+        days
+      </div>
+      <div class="card" id="stockoutProbBody"></div>
     </section>
   </div>
 
