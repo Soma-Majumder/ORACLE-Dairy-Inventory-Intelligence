@@ -42,6 +42,47 @@ function chart(history, fc, width = 210, height = 40) {
 
 function num(n) { return Math.round(n).toLocaleString(); }
 
+// --- hover tooltip ---------------------------------------------------
+// A single body-level element, so it isn't clipped by the scrolling card
+// the way a CSS ::after or a slow native title tooltip would be.
+
+let tipEl = null;
+function initTooltip() {
+  if (tipEl) return;
+  tipEl = document.createElement('div');
+  tipEl.className = 'oracle-tip';
+  document.body.appendChild(tipEl);
+
+  const place = (anchor) => {
+    tipEl.textContent = anchor.getAttribute('data-tip');
+    tipEl.classList.add('show');
+    const r = anchor.getBoundingClientRect();
+    const tw = tipEl.offsetWidth;
+    const th = tipEl.offsetHeight;
+    let left = Math.min(r.left, window.innerWidth - 8 - tw);
+    let top = r.bottom + 8;
+    if (top + th > window.innerHeight - 8) top = r.top - 8 - th;
+    tipEl.style.left = Math.max(8, left) + 'px';
+    tipEl.style.top = Math.max(8, top) + 'px';
+  };
+
+  document.addEventListener('mouseover', (e) => {
+    const a = e.target.closest('[data-tip]');
+    if (a) place(a);
+  });
+  document.addEventListener('mouseout', (e) => {
+    if (e.target.closest('[data-tip]')) tipEl.classList.remove('show');
+  });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-tip]');
+    if (a) place(a); else tipEl.classList.remove('show');
+  });
+}
+
+function tipAttr(text) {
+  return text ? ' data-tip="' + escapeHtml(text) + '" tabindex="0"' : '';
+}
+
 // --- "How it's predicted" — short plain-English method label ----------
 
 const PREDICT_PHRASE = {
@@ -94,9 +135,12 @@ function trackRecordCell(f) {
     ? [f.modelLabel,
        'MASE ' + acc.mase.toFixed(2) + (f.baseline ? ' vs ' + f.baseline.mase.toFixed(2) + ' (same-month-last-year)' : ''),
        'range coverage ' + Math.round(acc.coverage * 100) + '% at ' + Math.round(acc.level * 100) + '% target',
-       acc.nOrigins + ' walk-forward tests · ' + acc.horizon + '-month horizon'].join(' · ')
+       acc.nOrigins + ' walk-forward tests, ' + acc.horizon + '-month horizon'].join(' · ')
     : (f.modelLabel || f.model);
-  return '<span class="rating rating-' + r.cls + '" title="' + escapeHtml(tooltip) + '">' + r.word + '</span>' +
+  return '<span class="rating-wrap"' + tipAttr(tooltip) + '>' +
+    '<span class="rating rating-' + r.cls + '">' + r.word + '</span>' +
+    '<span class="tip-dot" aria-hidden="true">&#9432;</span>' +
+    '</span>' +
     '<div class="sub">' + r.note + '</div>';
 }
 
@@ -112,6 +156,7 @@ export function renderDemandPreview(demand) {
     return;
   }
   section.classList.remove('hidden');
+  initTooltip();
 
   const fmtDate = (d) => d ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'short' }) : '?';
 
@@ -152,7 +197,10 @@ export function renderDemandPreview(demand) {
       '<td class="name">' + escapeHtml(p.product) + '</td>' +
       '<td class="spark-cell">' + chartCell + '</td>' +
       '<td class="num">' + totalCell + '</td>' +
-      '<td class="predict-cell">' + (f ? escapeHtml(predictPhrase(f)) : '&mdash;') + '</td>' +
+      '<td class="predict-cell">' + (f
+        ? '<span class="rating-wrap"' + tipAttr('Statistical model: ' + f.modelLabel) + '>' +
+          escapeHtml(predictPhrase(f)) + '</span>'
+        : '&mdash;') + '</td>' +
       '<td>' + (f ? trackRecordCell(f) : '&mdash;') + '</td>' +
       '</tr>';
   }
