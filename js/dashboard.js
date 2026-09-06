@@ -11,6 +11,7 @@ import {
 import { buildDemandSeries } from './timeseries.js';
 import { renderDemandPreview } from './demand-preview.js';
 import { renderStockoutView } from './stockout-view.js';
+import { renderAnomalyView } from './anomaly-view.js';
 
 const state = {
   rows: [],
@@ -42,6 +43,7 @@ function renderPredictivePanels() {
   renderDemandPreview(state.demand);
   const horizon = Number($('stockoutHorizon') && $('stockoutHorizon').value) || 30;
   renderStockoutView(state.demand, state.stockByProduct, horizon);
+  renderAnomalyView(state.demand);
 }
 
 const $ = (id) => document.getElementById(id);

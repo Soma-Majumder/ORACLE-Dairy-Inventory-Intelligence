@@ -251,6 +251,21 @@
   .chart-legend .k.fc { background: var(--serious); }
   .chart-legend .k.band { background: color-mix(in srgb, var(--serious) 28%, transparent); height: 10px; }
 
+  /* Anomaly detection (v4) */
+  #anomalyBody table { min-width: 800px; }
+  #anomalyBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 3px; white-space: normal; line-height: 1.4; }
+  #anomalyBody td { text-align: left; vertical-align: top; }
+  #anomalyBody .muted { color: var(--text-muted); }
+  #anomalyBody .an-none { color: var(--good); font-weight: 600; font-size: 12px; }
+  svg.anomaly-spark .an-band  { fill: color-mix(in srgb, var(--series-blue) 12%, transparent); stroke: none; }
+  svg.anomaly-spark .an-line  { fill: none; stroke: var(--series-blue); stroke-width: 1.4; }
+  svg.anomaly-spark .an-shift { stroke: var(--warning); stroke-width: 1.4; stroke-dasharray: 3 2; }
+  svg.anomaly-spark .an-dot.an-spike { fill: var(--critical); }
+  svg.anomaly-spark .an-dot.an-drop  { fill: var(--serious); }
+  .chart-legend .k.an-l { background: var(--series-blue); }
+  .chart-legend .k.dot-sp { background: var(--critical); width: 8px; height: 8px; border-radius: 50%; }
+  .chart-legend .k.shift { background: var(--warning); }
+
   footer.privacy { margin-top: 34px; font-size: 12px; color: var(--text-muted); text-align: center; }
 
   .hidden { display: none !important; }
@@ -382,6 +397,12 @@
         days
       </div>
       <div class="card" id="stockoutProbBody"></div>
+    </section>
+
+    <section class="category hidden" id="sectionAnomaly">
+      <h2 class="days-until-run-out"><span class="dot warning"></span>Anomaly Detection <span class="tag">v4</span></h2>
+      <p class="subtitle" id="anomalySubtitle"></p>
+      <div class="card" id="anomalyBody"></div>
     </section>
   </div>
 
