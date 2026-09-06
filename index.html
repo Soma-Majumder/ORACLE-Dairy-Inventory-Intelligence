@@ -200,11 +200,13 @@
   }
 
   /* Demand history + forecast preview */
-  #demandBody table { min-width: 760px; }
+  #demandBody table { min-width: 820px; }
   #demandBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 2px; white-space: nowrap; }
   #demandBody .ok { color: var(--good); font-weight: 700; }
   #demandBody .muted { color: var(--text-muted); }
-  #demandBody tbody td:nth-child(4) { white-space: nowrap; }
+  #demandBody td.explain-cell { text-align: left; white-space: normal; min-width: 260px; max-width: 360px; font-size: 12px; line-height: 1.45; }
+  #demandBody .explain-method { color: var(--text-primary); }
+  #demandBody .explain-track { color: var(--text-secondary); margin-top: 4px; }
 
   /* Stockout probability (v3) */
   #stockoutProbBody table { min-width: 720px; }

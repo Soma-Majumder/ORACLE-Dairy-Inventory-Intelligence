@@ -4,17 +4,8 @@
 import { escapeHtml } from './utils.js';
 import { forecastProduct } from './forecast.js';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const FORECAST_HORIZON = 6;
 const FORECAST_LEVEL = 0.8;
-
-const CLASS_LABEL = {
-  smooth: 'Smooth',
-  intermittent: 'Intermittent',
-  erratic: 'Erratic',
-  lumpy: 'Lumpy',
-  'no-demand': 'No demand'
-};
 
 // History (solid) + forecast mean (dashed) + prediction band (shaded).
 function chart(history, fc, width = 210, height = 40) {
@@ -51,16 +42,90 @@ function chart(history, fc, width = 210, height = 40) {
 
 function num(n) { return Math.round(n).toLocaleString(); }
 
-function accuracyCell(acc, baseline) {
-  if (!acc) return '&mdash;';
-  const beatsNaive = baseline && acc.mase < baseline.mase;
-  const vs = baseline
-    ? ' <span class="muted">vs ' + baseline.mase.toFixed(2) + ' naive</span>'
-    : '';
-  const mark = beatsNaive ? '<span class="ok">&#10003;</span> ' : '';
-  return mark + 'MASE ' + acc.mase.toFixed(2) + vs +
-    '<div class="sub">' + Math.round(acc.coverage * 100) + '% of actuals in band (target ' +
-    Math.round(acc.level * 100) + '%)</div>';
+// --- "How this forecast works" — plain-English explanation ------------
+
+function trendWord(pct) {
+  if (pct == null || !isFinite(pct)) return 'flat';
+  if (pct > 2) return 'upward';
+  if (pct < -2) return 'downward';
+  return 'flat';
+}
+
+// First sentence: which method won and why it fits this product.
+function methodSentence(f, s) {
+  switch (f.model) {
+    case 'ses':
+      return 'Follows the recent sales level; the history shows no reliable trend or seasonal cycle to lean on.';
+    case 'naive':
+      return 'Carries the last month forward — there isn’t enough history yet for anything more.';
+    case 'seasonal-naive':
+      return 'Repeats what happened in the same month last year — that yearly pattern is the strongest signal in the history.';
+    case 'holt': {
+      const w = trendWord(s.trendPctPerYear);
+      return 'Projects the recent ' + (w === 'flat' ? '' : w + ' ') + 'trend in sales forward.';
+    }
+    case 'holt-winters':
+      return 'Combines the direction demand has been heading with its month-to-month seasonal pattern.';
+    case 'croston':
+      return 'This product sells in occasional bursts with quiet gaps; the forecast estimates a low steady rate for the spells between orders.';
+    default:
+      return 'Forecast method: ' + (f.modelLabel || f.model) + '.';
+  }
+}
+
+// Second sentence: how it did in walk-forward back-testing.
+function trackRecordSentence(f) {
+  const acc = f.accuracy;
+  if (!acc) return 'There isn’t enough history to back-test this one yet, so treat it as a rough guide.';
+
+  const cov = Math.round(acc.coverage * 100);
+  const target = Math.round(acc.level * 100);
+  const base = f.baseline;
+
+  let lead;
+  if (base && base.mase > 0) {
+    const impr = Math.round((1 - acc.mase / base.mase) * 100);
+    if (impr >= 3) {
+      lead = 'In back-testing it was about ' + impr + '% more accurate than a simple “same month last year” guess';
+    } else if (impr > -3) {
+      lead = 'In back-testing it came out about level with a simple “same month last year” guess — the history is too noisy to do much better, so lean on the range rather than the single number';
+    } else {
+      lead = 'In back-testing a simple “same month last year” guess edged it out — lean on the range rather than the single number';
+    }
+  } else {
+    lead = acc.mase < 1
+      ? 'In back-testing its typical miss was smaller than a plain “same as last month” guess’s'
+      : 'In back-testing it roughly matched a plain “same as last month” guess';
+  }
+
+  let cover;
+  if (cov <= target - 6) {
+    cover = ', though real demand only landed inside its predicted range ' + cov + '% of the time (target ' +
+      target + '%) — so treat that range as a floor, not a ceiling.';
+  } else if (cov >= target + 8) {
+    cover = ', and its predicted range ran a little wide — real demand fell inside it ' + cov +
+      '% of the time against an ' + target + '% target.';
+  } else {
+    cover = ', and real demand landed inside its predicted range about ' + cov + '% of the time (target ' +
+      target + '%).';
+  }
+  return lead + cover;
+}
+
+function explainCell(f, s) {
+  if (!f) return { html: '<span class="muted">No forecast &mdash; not enough history.</span>', tooltip: '' };
+  const acc = f.accuracy;
+  const tooltip = acc
+    ? [f.modelLabel,
+       'MASE ' + acc.mase.toFixed(2) + (f.baseline ? ' vs ' + f.baseline.mase.toFixed(2) + ' (same-month-last-year)' : ''),
+       'range coverage ' + Math.round(acc.coverage * 100) + '% at ' + Math.round(acc.level * 100) + '% target',
+       acc.nOrigins + ' walk-forward tests · ' + acc.horizon + '-month horizon'].join(' · ')
+    : (f.modelLabel || f.model);
+  return {
+    html: '<div class="explain-method">' + escapeHtml(methodSentence(f, s)) + '</div>' +
+          '<div class="explain-track">' + escapeHtml(trackRecordSentence(f)) + '</div>',
+    tooltip
+  };
 }
 
 export function renderDemandPreview(demand) {
@@ -98,28 +163,25 @@ export function renderDemandPreview(demand) {
     '<th>Product</th>' +
     '<th>History &rarr; forecast</th>' +
     '<th class="num">Next ' + FORECAST_HORIZON + ' months</th>' +
-    '<th>Model picked</th>' +
-    '<th class="num">Backtest accuracy</th>' +
+    '<th>How this forecast works</th>' +
     '</tr></thead><tbody>';
 
   for (const { p, f } of forecasts) {
     const s = p.summary;
-    const model = f
-      ? escapeHtml(f.modelLabel) + '<div class="sub">' + (CLASS_LABEL[s.demandClass] || '') + ' demand</div>'
-      : '&mdash;';
     const ht = f ? f.horizonTotal : null;
     const totalCell = ht
       ? '<strong>' + num(ht.mean) + '</strong><div class="sub">range ' + num(ht.lower) + ' – ' + num(ht.upper) +
         '</div><div class="sub muted">history avg ' + num(s.mean * FORECAST_HORIZON) + '</div>'
       : '&mdash;';
     const chartCell = f ? chart(f.history.demand, f) : '';
+    const ex = explainCell(f, s);
 
     html += '<tr>' +
       '<td class="name">' + escapeHtml(p.product) + '</td>' +
       '<td class="spark-cell">' + chartCell + '</td>' +
       '<td class="num">' + totalCell + '</td>' +
-      '<td>' + model + '</td>' +
-      '<td class="num">' + accuracyCell(f && f.accuracy, f && f.baseline) + '</td>' +
+      '<td class="explain-cell"' + (ex.tooltip ? ' title="' + escapeHtml(ex.tooltip) + '"' : '') + '>' +
+        ex.html + '</td>' +
       '</tr>';
   }
   html += '</tbody></table>' +
