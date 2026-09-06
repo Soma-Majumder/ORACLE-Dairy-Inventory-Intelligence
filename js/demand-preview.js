@@ -42,78 +42,53 @@ function chart(history, fc, width = 210, height = 40) {
 
 function num(n) { return Math.round(n).toLocaleString(); }
 
-// --- "How this forecast works" — plain-English explanation ------------
+// --- "How it's predicted" — short plain-English method label ----------
 
-function trendWord(pct) {
-  if (pct == null || !isFinite(pct)) return 'flat';
-  if (pct > 2) return 'upward';
-  if (pct < -2) return 'downward';
-  return 'flat';
+const PREDICT_PHRASE = {
+  'ses': 'Follows the recent average',
+  'naive': 'Repeats last month',
+  'seasonal-naive': "Repeats last year's month",
+  'holt': 'Follows the trend',
+  'holt-winters': 'Trend + seasonal pattern',
+  'croston': 'Handles on-and-off demand'
+};
+
+function predictPhrase(f) {
+  return PREDICT_PHRASE[f.model] || (f.modelLabel || f.model);
 }
 
-// First sentence: which method won and why it fits this product.
-function methodSentence(f, s) {
-  switch (f.model) {
-    case 'ses':
-      return 'Follows the recent sales level; the history shows no reliable trend or seasonal cycle to lean on.';
-    case 'naive':
-      return 'Carries the last month forward — there isn’t enough history yet for anything more.';
-    case 'seasonal-naive':
-      return 'Repeats what happened in the same month last year — that yearly pattern is the strongest signal in the history.';
-    case 'holt': {
-      const w = trendWord(s.trendPctPerYear);
-      return 'Projects the recent ' + (w === 'flat' ? '' : w + ' ') + 'trend in sales forward.';
-    }
-    case 'holt-winters':
-      return 'Combines the direction demand has been heading with its month-to-month seasonal pattern.';
-    case 'croston':
-      return 'This product sells in occasional bursts with quiet gaps; the forecast estimates a low steady rate for the spells between orders.';
-    default:
-      return 'Forecast method: ' + (f.modelLabel || f.model) + '.';
-  }
-}
+// --- "Track record" — a rating word from the walk-forward backtest ----
+// Rated mainly on absolute accuracy (MASE: <1 beats a no-thought guess),
+// then adjusted for how well the prediction range held up (coverage vs
+// the 80% target). Raw numbers stay in the cell tooltip.
 
-// Second sentence: how it did in walk-forward back-testing.
-function trackRecordSentence(f) {
+function ratingFor(f) {
   const acc = f.accuracy;
-  if (!acc) return 'There isn’t enough history to back-test this one yet, so treat it as a rough guide.';
+  if (!acc) return { word: 'Untested', cls: 'muted', note: 'not enough history to back-test' };
 
-  const cov = Math.round(acc.coverage * 100);
-  const target = Math.round(acc.level * 100);
-  const base = f.baseline;
+  const mase = acc.mase;
+  const covOff = acc.coverage - acc.level;   // + = range too wide, - = range too tight
+  const beatsBase = f.baseline ? mase < f.baseline.mase : mase < 1;
 
-  let lead;
-  if (base && base.mase > 0) {
-    const impr = Math.round((1 - acc.mase / base.mase) * 100);
-    if (impr >= 3) {
-      lead = 'In back-testing it was about ' + impr + '% more accurate than a simple “same month last year” guess';
-    } else if (impr > -3) {
-      lead = 'In back-testing it came out about level with a simple “same month last year” guess — the history is too noisy to do much better, so lean on the range rather than the single number';
-    } else {
-      lead = 'In back-testing a simple “same month last year” guess edged it out — lean on the range rather than the single number';
-    }
-  } else {
-    lead = acc.mase < 1
-      ? 'In back-testing its typical miss was smaller than a plain “same as last month” guess’s'
-      : 'In back-testing it roughly matched a plain “same as last month” guess';
-  }
+  let word, cls;
+  if (covOff < -0.12) { word = 'Fair'; cls = 'warning'; }        // range badly overconfident
+  else if (mase <= 0.70 && covOff <= 0.16) { word = 'Strong'; cls = 'good'; }
+  else if (mase <= 0.90) { word = 'Good'; cls = 'sage'; }
+  else if (mase <= 1.05 || beatsBase) { word = 'Fair'; cls = 'warning'; }
+  else { word = 'Weak'; cls = 'serious'; }
 
-  let cover;
-  if (cov <= target - 6) {
-    cover = ', though real demand only landed inside its predicted range ' + cov + '% of the time (target ' +
-      target + '%) — so treat that range as a floor, not a ceiling.';
-  } else if (cov >= target + 8) {
-    cover = ', and its predicted range ran a little wide — real demand fell inside it ' + cov +
-      '% of the time against an ' + target + '% target.';
-  } else {
-    cover = ', and real demand landed inside its predicted range about ' + cov + '% of the time (target ' +
-      target + '%).';
-  }
-  return lead + cover;
+  let note;
+  if (word === 'Weak') note = 'worse than a no-thought guess here';
+  else if (!beatsBase) note = 'history too noisy to beat a rough guess';
+  else if (covOff <= -0.05) note = 'beats a rough guess; treat range as a floor';
+  else if (covOff >= 0.10) note = 'beats a rough guess; range is cautious';
+  else note = 'beats a rough guess; range holds up';
+
+  return { word, cls, note };
 }
 
-function explainCell(f, s) {
-  if (!f) return { html: '<span class="muted">No forecast &mdash; not enough history.</span>', tooltip: '' };
+function trackRecordCell(f) {
+  const r = ratingFor(f);
   const acc = f.accuracy;
   const tooltip = acc
     ? [f.modelLabel,
@@ -121,11 +96,8 @@ function explainCell(f, s) {
        'range coverage ' + Math.round(acc.coverage * 100) + '% at ' + Math.round(acc.level * 100) + '% target',
        acc.nOrigins + ' walk-forward tests · ' + acc.horizon + '-month horizon'].join(' · ')
     : (f.modelLabel || f.model);
-  return {
-    html: '<div class="explain-method">' + escapeHtml(methodSentence(f, s)) + '</div>' +
-          '<div class="explain-track">' + escapeHtml(trackRecordSentence(f)) + '</div>',
-    tooltip
-  };
+  return '<span class="rating rating-' + r.cls + '" title="' + escapeHtml(tooltip) + '">' + r.word + '</span>' +
+    '<div class="sub">' + r.note + '</div>';
 }
 
 export function renderDemandPreview(demand) {
@@ -163,7 +135,8 @@ export function renderDemandPreview(demand) {
     '<th>Product</th>' +
     '<th>History &rarr; forecast</th>' +
     '<th class="num">Next ' + FORECAST_HORIZON + ' months</th>' +
-    '<th>How this forecast works</th>' +
+    '<th>How it&rsquo;s predicted</th>' +
+    '<th>Track record</th>' +
     '</tr></thead><tbody>';
 
   for (const { p, f } of forecasts) {
@@ -174,14 +147,13 @@ export function renderDemandPreview(demand) {
         '</div><div class="sub muted">history avg ' + num(s.mean * FORECAST_HORIZON) + '</div>'
       : '&mdash;';
     const chartCell = f ? chart(f.history.demand, f) : '';
-    const ex = explainCell(f, s);
 
     html += '<tr>' +
       '<td class="name">' + escapeHtml(p.product) + '</td>' +
       '<td class="spark-cell">' + chartCell + '</td>' +
       '<td class="num">' + totalCell + '</td>' +
-      '<td class="explain-cell"' + (ex.tooltip ? ' title="' + escapeHtml(ex.tooltip) + '"' : '') + '>' +
-        ex.html + '</td>' +
+      '<td class="predict-cell">' + (f ? escapeHtml(predictPhrase(f)) : '&mdash;') + '</td>' +
+      '<td>' + (f ? trackRecordCell(f) : '&mdash;') + '</td>' +
       '</tr>';
   }
   html += '</tbody></table>' +

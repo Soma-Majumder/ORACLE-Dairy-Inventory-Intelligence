@@ -200,13 +200,20 @@
   }
 
   /* Demand history + forecast preview */
-  #demandBody table { min-width: 820px; }
-  #demandBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 2px; white-space: nowrap; }
-  #demandBody .ok { color: var(--good); font-weight: 700; }
+  #demandBody table { min-width: 780px; }
+  #demandBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 3px; white-space: normal; line-height: 1.35; }
   #demandBody .muted { color: var(--text-muted); }
-  #demandBody td.explain-cell { text-align: left; white-space: normal; min-width: 260px; max-width: 360px; font-size: 12px; line-height: 1.45; }
-  #demandBody .explain-method { color: var(--text-primary); }
-  #demandBody .explain-track { color: var(--text-secondary); margin-top: 4px; }
+  #demandBody td.predict-cell { text-align: left; white-space: normal; max-width: 150px; font-weight: 600; }
+  #demandBody td:last-child { text-align: left; max-width: 190px; }
+  .rating {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px;
+  }
+  .rating-good    { background: var(--good);    color: #fff; }
+  .rating-sage    { background: var(--series-blue); color: #fff; }
+  .rating-warning { background: #f7e7c9; color: #926126; }
+  .rating-serious { background: #f5d6cb; color: #934c3f; }
+  .rating-muted   { background: var(--gridline); color: var(--text-secondary); }
 
   /* Stockout probability (v3) */
   #stockoutProbBody table { min-width: 720px; }
