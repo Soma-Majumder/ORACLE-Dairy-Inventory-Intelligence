@@ -193,6 +193,63 @@
 
   .stockout-hint { font-size: 11px; font-weight: 400; color: var(--text-secondary); margin-top: 2px; }
 
+  section.category h2 .tag {
+    font-family: Inter, system-ui, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: .1em;
+    text-transform: uppercase; color: #687a60; background: color-mix(in srgb, var(--sage) 20%, transparent);
+    border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--border)); border-radius: 20px; padding: 3px 9px;
+  }
+
+  /* Demand history + forecast preview */
+  #demandBody table { min-width: 780px; }
+  #demandBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 3px; white-space: normal; line-height: 1.35; }
+  #demandBody .muted { color: var(--text-muted); }
+  #demandBody td.predict-cell { text-align: left; white-space: normal; max-width: 150px; font-weight: 600; }
+  #demandBody td:last-child { text-align: left; max-width: 190px; }
+  .rating {
+    display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 20px;
+  }
+  .rating-good    { background: var(--good);    color: #fff; }
+  .rating-sage    { background: var(--series-blue); color: #fff; }
+  .rating-warning { background: #f7e7c9; color: #926126; }
+  .rating-serious { background: #f5d6cb; color: #934c3f; }
+  .rating-muted   { background: var(--gridline); color: var(--text-secondary); }
+  .rating-wrap { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+  .rating-wrap:focus { outline: 2px solid var(--sage); outline-offset: 2px; border-radius: 4px; }
+  .tip-dot { color: var(--text-muted); font-size: 12px; }
+  #demandBody td.predict-cell .rating-wrap { border-bottom: 1px dotted var(--text-muted); }
+  .oracle-tip {
+    position: fixed; z-index: 9999; pointer-events: none;
+    background: var(--text-primary); color: #fdfbf7;
+    font: 400 11px/1.5 Inter, ui-sans-serif, system-ui, sans-serif; letter-spacing: 0; text-transform: none;
+    padding: 8px 10px; border-radius: 8px; max-width: 300px;
+    box-shadow: 0 10px 30px rgba(46, 38, 24, .28);
+    opacity: 0; transition: opacity .12s;
+  }
+  .oracle-tip.show { opacity: 1; }
+
+  /* Stockout probability (v3) */
+  #stockoutProbBody table { min-width: 720px; }
+  #stockoutProbBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 2px; white-space: nowrap; }
+  #stockoutProbBody .muted { color: var(--text-muted); }
+  .pbar { margin-top: 5px; height: 5px; border-radius: 3px; background: var(--gridline); overflow: hidden; }
+  .pbar-fill { display: block; height: 100%; border-radius: 3px; }
+  .pbar-fill.risk-critical { background: var(--critical); }
+  .pbar-fill.risk-high { background: var(--serious); }
+  .pbar-fill.risk-medium { background: var(--warning); }
+  .pbar-fill.risk-low { background: var(--good); }
+  td.spark-cell { width: 230px; padding-top: 6px; padding-bottom: 6px; }
+  svg.spark { display: block; overflow: visible; }
+  svg.spark .spark-hist { fill: none; stroke: var(--series-blue); stroke-width: 1.5; }
+  svg.spark .spark-fc   { fill: none; stroke: var(--serious); stroke-width: 1.5; stroke-dasharray: 3 2; }
+  svg.spark .spark-band { fill: color-mix(in srgb, var(--serious) 16%, transparent); stroke: none; }
+  svg.spark .spark-div  { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 2; }
+  .chart-legend { margin: 10px 4px 2px; font-size: 11px; color: var(--text-secondary); display: flex; gap: 14px; }
+  .chart-legend .k { display: inline-block; width: 16px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+  .chart-legend .k.hist { background: var(--series-blue); }
+  .chart-legend .k.fc { background: var(--serious); }
+  .chart-legend .k.band { background: color-mix(in srgb, var(--serious) 28%, transparent); height: 10px; }
+
   footer.privacy { margin-top: 34px; font-size: 12px; color: var(--text-muted); text-align: center; }
 
   .hidden { display: none !important; }
@@ -308,545 +365,28 @@
       <p class="subtitle">Current stock at or below the reorder point.</p>
       <div class="card" id="reorderBody"></div>
     </section>
+
+    <section class="category hidden" id="sectionDemand">
+      <h2 class="days-until-run-out"><span class="dot neutral"></span>Demand Forecast <span class="tag">v2</span></h2>
+      <p class="subtitle" id="demandSubtitle"></p>
+      <div class="card" id="demandBody"></div>
+    </section>
+
+    <section class="category hidden" id="sectionStockoutProb">
+      <h2 class="days-until-run-out"><span class="dot critical"></span>Stockout Probability <span class="tag">v3</span></h2>
+      <p class="subtitle" id="stockoutProbSubtitle"></p>
+      <div class="controls-row" style="margin: 0 0 12px;">
+        Simulation horizon
+        <input type="number" id="stockoutHorizon" min="7" max="180" value="30" />
+        days
+      </div>
+      <div class="card" id="stockoutProbBody"></div>
+    </section>
   </div>
 
   <footer class="privacy">Your spreadsheet is processed entirely in this browser tab — nothing is uploaded to a server.</footer>
 </div>
 
-<script>
-(function () {
-  const COLUMN_ALIASES = {
-    name: ['product name','product','item','item name','name','sku name','product/item','description'],
-    stock: ['current stock','stock','quantity','qty','current qty','on hand','stock on hand','inventory','current inventory','units in stock','stock level'],
-    minStock: ['min stock','minimum stock','safety stock','min qty','low stock threshold','minimum quantity','critical stock level','min level'],
-    reorderPoint: ['reorder point','reorder level','rop','reorder threshold','reorder trigger','reorder qty threshold'],
-    expiration: ['expiration date','expiry date','exp date','best by','use by','sell by','expires','expiration','best before','best before date'],
-    reorderQty: ['reorder qty','reorder quantity','order qty','order quantity','suggested order qty'],
-    parLevel: ['par level','max stock','target stock','max qty','par','target quantity'],
-    unit: ['unit','uom','units','unit of measure'],
-    category: ['category','type','product type','product category'],
-    salesRate: ['sales rate','avg daily sales','average daily sales','daily sales','daily sales rate','units sold per day','avg sales per day','sales velocity','avg daily usage','daily usage','usage rate','avg daily demand','daily demand']
-  };
-
-  const state = { rows: [], columns: {}, fileName: '', reviewed: new Set(), referenceDate: null };
-
-  const $ = (id) => document.getElementById(id);
-  const dropzone = $('dropzone');
-  const fileInput = $('fileInput');
-
-  function normalizeHeader(h) {
-    return String(h || '').toLowerCase().trim().replace(/[_\-]/g, ' ').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ');
-  }
-
-  function detectColumns(headers) {
-    const normalized = headers.map(normalizeHeader);
-    const map = {};
-    for (const field of Object.keys(COLUMN_ALIASES)) {
-      const aliases = COLUMN_ALIASES[field];
-      let foundIdx = -1;
-      for (let i = 0; i < normalized.length; i++) {
-        if (aliases.includes(normalized[i])) { foundIdx = i; break; }
-      }
-      if (foundIdx !== -1) map[field] = headers[foundIdx];
-    }
-    return map;
-  }
-
-  function parseDate(value) {
-    if (value === null || value === undefined || value === '') return null;
-    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-    if (typeof value === 'number') {
-      try {
-        const d = XLSX.SSF.parse_date_code(value);
-        if (d) return new Date(d.y, d.m - 1, d.d);
-      } catch (e) { /* fall through */ }
-    }
-    const d = new Date(String(value).trim());
-    return isNaN(d.getTime()) ? null : d;
-  }
-
-  function toNumber(value) {
-    if (value === null || value === undefined || value === '') return null;
-    const n = Number(String(value).replace(/[,$]/g, '').trim());
-    return isNaN(n) ? null : n;
-  }
-
-  function daysBetween(a, b) {
-    const MS = 24 * 60 * 60 * 1000;
-    const d1 = new Date(a.getFullYear(), a.getMonth(), a.getDate());
-    const d2 = new Date(b.getFullYear(), b.getMonth(), b.getDate());
-    return Math.round((d2 - d1) / MS);
-  }
-
-  function computeStockoutDays(stock, salesRate) {
-    if (stock === null) return null;
-    if (stock <= 0) return 0;
-    if (salesRate === null || salesRate <= 0) return null;
-    return Math.floor(stock / salesRate);
-  }
-
-  function showError(msg) {
-    const el = $('errorBanner');
-    el.textContent = msg;
-    el.classList.remove('hidden');
-  }
-  function clearError() {
-    $('errorBanner').classList.add('hidden');
-    $('errorBanner').textContent = '';
-  }
-
-  function handleWorkbook(workbook, fileName) {
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
-    loadRows(json, fileName);
-  }
-
-  function loadRows(json, fileName, referenceDate) {
-    if (!json.length) {
-      showError('That spreadsheet looks empty — no rows were found on the first sheet.');
-      return;
-    }
-    const headers = Object.keys(json[0]);
-    const columns = detectColumns(headers);
-
-    if (!columns.name || !columns.stock) {
-      showError('Could not find a product name and/or current stock column. Detected headers: ' + headers.join(', ') + '. Try the template for the expected column names.');
-      return;
-    }
-
-    state.columns = columns;
-    state.fileName = fileName;
-    state.referenceDate = referenceDate || null;
-    state.rows = json.map((row, idx) => {
-      const stock = toNumber(row[columns.stock]);
-      const minStockRaw = columns.minStock ? toNumber(row[columns.minStock]) : null;
-      const reorderPointRaw = columns.reorderPoint ? toNumber(row[columns.reorderPoint]) : null;
-      const minStock = minStockRaw !== null ? minStockRaw : reorderPointRaw;
-      const reorderPoint = reorderPointRaw !== null ? reorderPointRaw : minStockRaw;
-      const parLevel = columns.parLevel ? toNumber(row[columns.parLevel]) : null;
-      const reorderQty = columns.reorderQty ? toNumber(row[columns.reorderQty]) : null;
-      const salesRate = columns.salesRate ? toNumber(row[columns.salesRate]) : null;
-      return {
-        id: idx,
-        name: String(row[columns.name] ?? '').trim() || '(unnamed product)',
-        stock,
-        minStock,
-        reorderPoint,
-        expiration: columns.expiration ? parseDate(row[columns.expiration]) : null,
-        reorderQty,
-        parLevel,
-        salesRate,
-        stockoutDays: computeStockoutDays(stock, salesRate),
-        unit: columns.unit ? String(row[columns.unit] ?? '').trim() : '',
-        category: columns.category ? String(row[columns.category] ?? '').trim() : ''
-      };
-    }).filter(r => r.stock !== null || r.expiration !== null);
-
-    state.reviewed = new Set();
-
-    clearError();
-    $('fileName').textContent = fileName;
-    $('uploadCard').classList.add('hidden');
-    $('dashboard').classList.remove('hidden');
-    render();
-  }
-
-  function loadFile(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-        handleWorkbook(workbook, file.name);
-      } catch (err) {
-        showError('Could not read that file. Make sure it is a valid .xlsx, .xls, or .csv spreadsheet.');
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  function aggregateOpenSourceRows(rawRows) {
-    const groups = new Map();
-    for (const row of rawRows) {
-      const productName = String(row['Product Name'] ?? '').trim();
-      const brand = String(row['Brand'] ?? '').trim();
-      if (!productName) continue;
-      const key = productName + '|' + brand;
-      if (!groups.has(key)) groups.set(key, { productName, brand, batches: [] });
-      groups.get(key).batches.push(row);
-    }
-
-    const aggregated = [];
-    for (const { productName, brand, batches } of groups.values()) {
-      const withDate = batches
-        .map(b => ({ row: b, date: parseDate(b['Date']) }))
-        .filter(b => b.date !== null)
-        .sort((a, b) => b.date.getTime() - a.date.getTime());
-      const latest = (withDate.length ? withDate[0].row : batches[batches.length - 1]);
-
-      let salesRate = null;
-      if (withDate.length >= 2) {
-        const oldest = withDate[withDate.length - 1].date;
-        const newest = withDate[0].date;
-        const spanDays = Math.max(Math.round((newest - oldest) / (24 * 60 * 60 * 1000)), 1);
-        const totalSold = withDate.reduce((sum, b) => sum + (toNumber(b.row['Quantity Sold (liters/kg)']) || 0), 0);
-        salesRate = totalSold / spanDays;
-      }
-
-      aggregated.push({
-        'Product Name': productName + (brand ? ' (' + brand + ')' : ''),
-        'Category': String(latest['Storage Condition'] ?? '').trim(),
-        'Current Stock': latest['Quantity in Stock (liters/kg)'],
-        'Min Stock': latest['Minimum Stock Threshold (liters/kg)'],
-        'Reorder Qty': latest['Reorder Quantity (liters/kg)'],
-        'Expiration Date': parseDate(latest['Expiration Date']),
-        'Sales Rate': salesRate !== null ? Math.round(salesRate * 100) / 100 : '',
-        'Unit': 'kg/L'
-      });
-    }
-    return aggregated;
-  }
-
-  async function loadOpenSourceDataset() {
-    try {
-      const response = await fetch('data/dairy_dataset.csv');
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      const text = await response.text();
-      const workbook = XLSX.read(text, { type: 'string' });
-      const sheetName = workbook.SheetNames[0];
-      const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '', raw: true })
-        .map(row => {
-          const trimmed = {};
-          for (const key of Object.keys(row)) trimmed[key.trim()] = row[key];
-          return trimmed;
-        });
-      if (!rawRows.length) {
-        showError('The open-source dataset file appears to be empty.');
-        return;
-      }
-      const allDates = rawRows.map(r => parseDate(r['Date'])).filter(d => d !== null);
-      const referenceDate = allDates.length ? new Date(Math.max(...allDates.map(d => d.getTime()))) : null;
-      const aggregated = aggregateOpenSourceRows(rawRows);
-      const asOf = referenceDate ? ', as of ' + referenceDate.toLocaleDateString() : '';
-      loadRows(aggregated, 'dairy_dataset.csv (' + aggregated.length + ' products by brand, latest batch each' + asOf + ')', referenceDate);
-    } catch (err) {
-      showError('Could not load data/dairy_dataset.csv. If you opened this file directly from disk, browsers block that fetch for security reasons — serve the folder with a local web server (e.g. "python3 -m http.server") and reload.');
-    }
-  }
-
-  function badge(label, level) {
-    return '<span class="badge ' + level + '">' + label + '</span>';
-  }
-
-  function nameCell(r) {
-    return '<span class="name' + (state.reviewed.has(r.id) ? ' is-reviewed' : '') + '">' + escapeHtml(r.name) + '</span>';
-  }
-
-  function stockoutNameCell(r) {
-    let html = nameCell(r);
-    if (r.minStock !== null && r.stock !== null && r.stock > r.minStock) {
-      html += '<div class="stockout-hint">Above min stock &mdash; selling fast</div>';
-    }
-    return html;
-  }
-
-  function stockoutBadge(days) {
-    if (days === null) return '&mdash;';
-    const label = days + (days === 1 ? ' DAY LEFT' : ' DAYS LEFT');
-    if (days <= 3) return badge(label, 'critical');
-    if (days <= 7) return badge(label, 'serious');
-    if (days <= 14) return badge(label, 'warning');
-    return badge(label, 'good');
-  }
-
-  function reorderStatusBadge(r, stockoutThreshold) {
-    const isUrgent = r.stockoutDays === null || r.stockoutDays <= stockoutThreshold;
-    return isUrgent ? badge('REORDER NOW', 'serious') : badge('BELOW REORDER POINT', 'warning');
-  }
-
-  function rateCell(rate, unit) {
-    if (rate === null) return '&mdash;';
-    const formatted = Number.isInteger(rate) ? rate : rate.toFixed(2);
-    return formatted + ' ' + (unit ? escapeHtml(unit) : 'units') + '/day';
-  }
-
-  function statusCell(id, originalBadgeHtml) {
-    return state.reviewed.has(id) ? badge('REVIEWED', 'good') : originalBadgeHtml;
-  }
-
-  function reviewCell(id) {
-    if (state.reviewed.has(id)) {
-      return '<span class="review-done">&#10003; Reviewed <button type="button" class="undo-link" data-action="undo-review" data-id="' + id + '">undo</button></span>';
-    }
-    return '<button type="button" class="review-btn" data-action="mark-review" data-id="' + id + '">Mark reviewed</button>';
-  }
-
-  function renderMissingNote(field, label) {
-    return '<div class="missing-note">No <code>' + label + '</code> column was found, so this section can\'t be calculated. Add one to your spreadsheet and re-upload to see it.</div>';
-  }
-
-  function renderEmpty(msg) {
-    return '<div class="empty-section"><span class="check">&#10003;</span>' + msg + '</div>';
-  }
-
-  function render() {
-    const rows = state.rows;
-    const cols = state.columns;
-    const today = state.referenceDate || new Date();
-    const expiryThreshold = Number($('expiryDays').value) || 7;
-    const stockoutThreshold = Number($('stockoutDays').value) || 14;
-
-    $('totalCount').textContent = rows.length;
-
-    // Stockout forecast
-    const stockoutBody = $('stockoutBody');
-    if (!cols.salesRate) {
-      stockoutBody.innerHTML = renderMissingNote('salesRate', 'Sales Rate (or Avg Daily Sales)');
-      $('statStockout').textContent = '—';
-    } else {
-      const stockoutRows = rows
-        .filter(r => r.stockoutDays !== null && r.stockoutDays <= stockoutThreshold)
-        .sort((a, b) => a.stockoutDays - b.stockoutDays);
-      $('statStockout').textContent = stockoutRows.length;
-      if (!stockoutRows.length) {
-        stockoutBody.innerHTML = renderEmpty('No products are projected to run out soon.');
-      } else {
-        stockoutBody.innerHTML = renderTable(
-          ['Product', 'Category', 'Current Stock', 'Sales Rate', 'Days Until Stockout', 'Review'],
-          stockoutRows.map(r => ({ id: r.id, cells: [
-            stockoutNameCell(r),
-            escapeHtml(r.category) || '&mdash;',
-            numCell(r.stock, r.unit),
-            rateCell(r.salesRate, r.unit),
-            statusCell(r.id, stockoutBadge(r.stockoutDays)),
-            reviewCell(r.id)
-          ] })),
-          [false, false, true, true, false, false],
-          [false, true, true, true, false, false]
-        );
-      }
-    }
-
-    // Low stock
-    const lowStockBody = $('lowStockBody');
-    if (!cols.minStock && !cols.reorderPoint) {
-      lowStockBody.innerHTML = renderMissingNote('minStock', 'Min Stock (or Reorder Point)');
-      $('statLowStock').textContent = '—';
-    } else {
-      const lowStockRows = rows
-        .filter(r => r.stock !== null && r.minStock !== null && r.stock <= r.minStock)
-        .sort((a, b) => (a.stock - a.minStock) - (b.stock - b.minStock));
-      $('statLowStock').textContent = lowStockRows.length;
-      if (!lowStockRows.length) {
-        lowStockBody.innerHTML = renderEmpty('No products are low on stock.');
-      } else {
-        const headers = ['Product', 'Category', 'Current Stock', 'Min Stock'];
-        const numericCols = [false, false, true, true];
-        const mutedCols = [false, true, true, true];
-        if (cols.salesRate) { headers.push('Days Until Stockout'); numericCols.push(true); mutedCols.push(false); }
-        headers.push('Status', 'Review'); numericCols.push(false, false); mutedCols.push(false, false);
-
-        lowStockBody.innerHTML = renderTable(
-          headers,
-          lowStockRows.map(r => {
-            const cells = [
-              nameCell(r),
-              escapeHtml(r.category) || '&mdash;',
-              numCell(r.stock, r.unit),
-              numCell(r.minStock, r.unit)
-            ];
-            if (cols.salesRate) cells.push(stockoutBadge(r.stockoutDays));
-            cells.push(
-              statusCell(r.id, r.stock <= 0 ? badge('OUT OF STOCK', 'critical') : badge('LOW STOCK', 'serious')),
-              reviewCell(r.id)
-            );
-            return { id: r.id, cells };
-          }),
-          numericCols,
-          mutedCols
-        );
-      }
-    }
-
-    // Nearing expiration
-    const expiringBody = $('expiringBody');
-    $('expiringSubtitle').textContent = 'Products expired or expiring within ' + expiryThreshold + ' day' + (expiryThreshold === 1 ? '' : 's') + '.';
-    if (!cols.expiration) {
-      expiringBody.innerHTML = renderMissingNote('expiration', 'Expiration Date');
-      $('statExpiring').textContent = '—';
-    } else {
-      const expiringRows = rows
-        .filter(r => r.expiration !== null)
-        .map(r => ({ ...r, daysLeft: daysBetween(today, r.expiration) }))
-        .filter(r => r.daysLeft <= expiryThreshold)
-        .sort((a, b) => a.daysLeft - b.daysLeft);
-      $('statExpiring').textContent = expiringRows.length;
-      if (!expiringRows.length) {
-        expiringBody.innerHTML = renderEmpty('No products are expiring soon.');
-      } else {
-        const headers = ['Product', 'Category', 'Expiration Date', 'Days Left'];
-        const numericCols = [false, false, false, true];
-        const mutedCols = [false, true, true, true];
-        if (cols.salesRate) { headers.push('Days Until Stockout'); numericCols.push(true); mutedCols.push(false); }
-        headers.push('Status', 'Review'); numericCols.push(false, false); mutedCols.push(false, false);
-
-        expiringBody.innerHTML = renderTable(
-          headers,
-          expiringRows.map(r => {
-            const cells = [
-              nameCell(r),
-              escapeHtml(r.category) || '&mdash;',
-              r.expiration.toLocaleDateString(),
-              r.daysLeft < 0 ? (Math.abs(r.daysLeft) + (Math.abs(r.daysLeft) === 1 ? ' day ago' : ' days ago')) : (r.daysLeft === 0 ? 'Today' : r.daysLeft + (r.daysLeft === 1 ? ' day' : ' days'))
-            ];
-            if (cols.salesRate) cells.push(stockoutBadge(r.stockoutDays));
-            cells.push(
-              statusCell(r.id, r.daysLeft < 0 ? badge('EXPIRED', 'critical') : badge('EXPIRING SOON', 'warning')),
-              reviewCell(r.id)
-            );
-            return { id: r.id, cells };
-          }),
-          numericCols,
-          mutedCols
-        );
-      }
-    }
-
-    // Needs reordering
-    const reorderBody = $('reorderBody');
-    if (!cols.reorderPoint && !cols.minStock) {
-      reorderBody.innerHTML = renderMissingNote('reorderPoint', 'Reorder Point (or Min Stock)');
-      $('statReorder').textContent = '—';
-    } else {
-      const reorderRows = rows
-        .filter(r => r.stock !== null && r.reorderPoint !== null && r.stock <= r.reorderPoint)
-        .map(r => {
-          let suggested = null;
-          if (r.reorderQty !== null) suggested = r.reorderQty;
-          else if (r.parLevel !== null) suggested = Math.max(0, r.parLevel - r.stock);
-          return { ...r, suggested };
-        })
-        .sort((a, b) => (a.stock - a.reorderPoint) - (b.stock - b.reorderPoint));
-      $('statReorder').textContent = reorderRows.length;
-      if (!reorderRows.length) {
-        reorderBody.innerHTML = renderEmpty('No products need reordering right now.');
-      } else {
-        const headers = ['Product', 'Category', 'Current Stock', 'Reorder Point', 'Suggested Order'];
-        const numericCols = [false, false, true, true, true];
-        const mutedCols = [false, true, true, true, true];
-        if (cols.salesRate) { headers.push('Days Until Stockout'); numericCols.push(true); mutedCols.push(false); }
-        headers.push('Status', 'Review'); numericCols.push(false, false); mutedCols.push(false, false);
-
-        reorderBody.innerHTML = renderTable(
-          headers,
-          reorderRows.map(r => {
-            const cells = [
-              nameCell(r),
-              escapeHtml(r.category) || '&mdash;',
-              numCell(r.stock, r.unit),
-              numCell(r.reorderPoint, r.unit),
-              r.suggested !== null ? numCell(r.suggested, r.unit) : '&mdash;'
-            ];
-            if (cols.salesRate) cells.push(stockoutBadge(r.stockoutDays));
-            cells.push(
-              statusCell(r.id, reorderStatusBadge(r, stockoutThreshold)),
-              reviewCell(r.id)
-            );
-            return { id: r.id, cells };
-          }),
-          numericCols,
-          mutedCols
-        );
-      }
-    }
-
-    // Total needing action (union, de-duplicated by name)
-    const actionNames = new Set();
-    rows.forEach(r => {
-      const isLow = r.stock !== null && r.minStock !== null && r.stock <= r.minStock;
-      const isExpiring = r.expiration !== null && daysBetween(today, r.expiration) <= expiryThreshold;
-      const isReorder = r.stock !== null && r.reorderPoint !== null && r.stock <= r.reorderPoint;
-      const isStockoutRisk = r.stockoutDays !== null && r.stockoutDays <= stockoutThreshold;
-      if (isLow || isExpiring || isReorder || isStockoutRisk) actionNames.add(r.name + '|' + rows.indexOf(r));
-    });
-    $('statTotalAction').textContent = actionNames.size;
-  }
-
-  function numCell(n, unit) {
-    if (n === null || n === undefined) return '&mdash;';
-    const formatted = Number.isInteger(n) ? n : n.toFixed(2);
-    return formatted + (unit ? ' ' + escapeHtml(unit) : '');
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  }
-
-  function renderTable(headers, rowsData, numericCols, mutedCols) {
-    let html = '<table><thead><tr>';
-    headers.forEach((h, i) => { html += '<th class="' + (numericCols[i] ? 'num' : '') + '">' + h + '</th>'; });
-    html += '</tr></thead><tbody>';
-    rowsData.forEach(({ id, cells }) => {
-      const muted = state.reviewed.has(id);
-      html += '<tr>';
-      cells.forEach((c, i) => {
-        const classes = [numericCols[i] ? 'num' : '', muted && mutedCols[i] ? 'is-reviewed-muted' : ''].filter(Boolean).join(' ');
-        html += '<td class="' + classes + '">' + c + '</td>';
-      });
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-    return html;
-  }
-
-  function downloadTemplate() {
-    const data = [
-      ['Product Name', 'Category', 'Current Stock', 'Min Stock', 'Reorder Point', 'Reorder Qty', 'Expiration Date', 'Unit', 'Sales Rate'],
-      ['Whole Milk 1 Gal', 'Milk', 24, 20, 35, 60, '2026-08-01', 'gal', 5],
-      ['Cheddar Cheese Block', 'Cheese', 12, 10, 16, 25, '2026-10-15', 'block', 0.5]
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Inventory');
-    XLSX.writeFile(wb, 'dairy-inventory-template.xlsx');
-  }
-
-  // Wiring
-  $('browseBtn').addEventListener('click', () => fileInput.click());
-  dropzone.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) loadFile(e.target.files[0]);
-  });
-  ['dragover', 'dragenter'].forEach(evt => dropzone.addEventListener(evt, (e) => {
-    e.preventDefault(); dropzone.classList.add('drag-over');
-  }));
-  ['dragleave', 'drop'].forEach(evt => dropzone.addEventListener(evt, (e) => {
-    e.preventDefault(); dropzone.classList.remove('drag-over');
-  }));
-  dropzone.addEventListener('drop', (e) => {
-    const file = e.dataTransfer.files[0];
-    if (file) loadFile(file);
-  });
-  $('sampleBtn').addEventListener('click', loadOpenSourceDataset);
-  $('templateBtn').addEventListener('click', downloadTemplate);
-  $('newFileBtn').addEventListener('click', () => {
-    state.rows = []; state.columns = {}; state.reviewed = new Set(); state.referenceDate = null; fileInput.value = '';
-    clearError();
-    $('dashboard').classList.add('hidden');
-    $('uploadCard').classList.remove('hidden');
-  });
-  $('expiryDays').addEventListener('input', render);
-  $('stockoutDays').addEventListener('input', render);
-  $('dashboard').addEventListener('click', (e) => {
-    const target = e.target.closest('[data-action]');
-    if (!target) return;
-    const id = Number(target.dataset.id);
-    if (target.dataset.action === 'mark-review') state.reviewed.add(id);
-    else if (target.dataset.action === 'undo-review') state.reviewed.delete(id);
-    render();
-  });
-})();
-</script>
+<script type="module" src="js/dashboard.js"></script>
 </body>
 </html>
