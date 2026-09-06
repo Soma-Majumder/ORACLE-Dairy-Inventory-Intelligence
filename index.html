@@ -193,13 +193,29 @@
 
   .stockout-hint { font-size: 11px; font-weight: 400; color: var(--text-secondary); margin-top: 2px; }
 
-  svg.spark { color: var(--series-blue); display: block; }
-  td.spark-cell { width: 130px; }
   section.category h2 .tag {
     font-family: Inter, system-ui, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: .1em;
     text-transform: uppercase; color: #687a60; background: color-mix(in srgb, var(--sage) 20%, transparent);
     border: 1px solid color-mix(in srgb, var(--sage) 40%, var(--border)); border-radius: 20px; padding: 3px 9px;
   }
+
+  /* Demand history + forecast preview */
+  #demandBody table { min-width: 760px; }
+  #demandBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 2px; white-space: nowrap; }
+  #demandBody .ok { color: var(--good); font-weight: 700; }
+  #demandBody .muted { color: var(--text-muted); }
+  #demandBody tbody td:nth-child(4) { white-space: nowrap; }
+  td.spark-cell { width: 230px; padding-top: 6px; padding-bottom: 6px; }
+  svg.spark { display: block; overflow: visible; }
+  svg.spark .spark-hist { fill: none; stroke: var(--series-blue); stroke-width: 1.5; }
+  svg.spark .spark-fc   { fill: none; stroke: var(--serious); stroke-width: 1.5; stroke-dasharray: 3 2; }
+  svg.spark .spark-band { fill: color-mix(in srgb, var(--serious) 16%, transparent); stroke: none; }
+  svg.spark .spark-div  { stroke: var(--border); stroke-width: 1; stroke-dasharray: 2 2; }
+  .chart-legend { margin: 10px 4px 2px; font-size: 11px; color: var(--text-secondary); display: flex; gap: 14px; }
+  .chart-legend .k { display: inline-block; width: 16px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+  .chart-legend .k.hist { background: var(--series-blue); }
+  .chart-legend .k.fc { background: var(--serious); }
+  .chart-legend .k.band { background: color-mix(in srgb, var(--serious) 28%, transparent); height: 10px; }
 
   footer.privacy { margin-top: 34px; font-size: 12px; color: var(--text-muted); text-align: center; }
 
@@ -318,7 +334,7 @@
     </section>
 
     <section class="category hidden" id="sectionDemand">
-      <h2 class="days-until-run-out"><span class="dot neutral"></span>Demand History <span class="tag">v2 &middot; forecasting input</span></h2>
+      <h2 class="days-until-run-out"><span class="dot neutral"></span>Demand Forecast <span class="tag">v2</span></h2>
       <p class="subtitle" id="demandSubtitle"></p>
       <div class="card" id="demandBody"></div>
     </section>
