@@ -214,9 +214,10 @@
   .rating-warning { background: #f7e7c9; color: #926126; }
   .rating-serious { background: #f5d6cb; color: #934c3f; }
   .rating-muted   { background: var(--gridline); color: var(--text-secondary); }
-  .rating-wrap { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+  .rating-wrap { display: inline-flex; align-items: center; gap: 5px; cursor: url('assets/cow-cursor.png') 14 14, help; }
   .rating-wrap:focus { outline: 2px solid var(--sage); outline-offset: 2px; border-radius: 4px; }
-  .tip-dot { color: var(--text-muted); font-size: 12px; }
+  .tip-dot { width: 15px; height: 15px; object-fit: contain; opacity: .7; flex: none; }
+  .rating-wrap:hover .tip-dot { opacity: 1; }
   #demandBody td.predict-cell .rating-wrap { border-bottom: 1px dotted var(--text-muted); }
   .oracle-tip {
     position: fixed; z-index: 9999; pointer-events: none;
