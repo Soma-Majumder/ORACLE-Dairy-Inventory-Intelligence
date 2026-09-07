@@ -151,13 +151,14 @@ export function assessStockout(forecastResult, currentStock, opts = {}) {
   const horizonDays = opts.horizonDays || 30;
   const monthlyMean = forecastResult.mean || [];
   const sigma = forecastResult.sigma || 0;
+  const demandMult = opts.demandMultiplier == null ? 1 : Math.max(0, opts.demandMultiplier);
 
   const dailyMean = [];
   const dailySd = [];
   for (let day = 1; day <= horizonDays; day++) {
     const mi = Math.min(monthlyMean.length - 1, Math.floor((day - 1) / DAYS_PER_MONTH));
-    dailyMean.push(Math.max(0, monthlyMean[mi] || 0) / DAYS_PER_MONTH);
-    dailySd.push(sigma / Math.sqrt(DAYS_PER_MONTH));
+    dailyMean.push(Math.max(0, monthlyMean[mi] || 0) / DAYS_PER_MONTH * demandMult);
+    dailySd.push(sigma / Math.sqrt(DAYS_PER_MONTH) * demandMult);
   }
 
   const sim = simulateStockout({

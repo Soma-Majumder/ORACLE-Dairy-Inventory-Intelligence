@@ -14,6 +14,7 @@ import { renderStockoutView } from './stockout-view.js';
 import { renderAnomalyView } from './anomaly-view.js';
 import { buildFactorIndex } from './reasoning.js';
 import { renderReasoningView } from './reasoning-view.js';
+import { renderWhatIfView } from './whatif-view.js';
 
 const state = {
   rows: [],
@@ -48,6 +49,7 @@ function renderPredictivePanels() {
   renderStockoutView(state.demand, state.stockByProduct, horizon);
   renderAnomalyView(state.demand);
   renderReasoningView(state.demand, state.factorIndex);
+  renderWhatIfView(state.demand, state.stockByProduct);
 }
 
 const $ = (id) => document.getElementById(id);
