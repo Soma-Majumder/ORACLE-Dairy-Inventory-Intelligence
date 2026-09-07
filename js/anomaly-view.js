@@ -12,6 +12,19 @@ function fmtPeriod(p) {
 }
 function num(n) { return Math.round(n).toLocaleString(); }
 
+// Round to ~2 significant figures for "about N expected" phrasing.
+function roughNum(n) {
+  n = Math.abs(n);
+  if (n < 10) return String(Math.round(n));
+  const mag = 10 ** (Math.floor(Math.log10(n)) - 1);
+  return (Math.round(n / mag) * mag).toLocaleString();
+}
+
+// "3.4× the usual month-to-month swing", from a z-score.
+function swingPhrase(z) {
+  return Math.abs(z).toFixed(1) + '× the usual month-to-month swing';
+}
+
 // History line + expected ±2σ band + markers for anomalies and a level shift.
 function chart(series, expected, scale, points, shiftIndex, width = 220, height = 46) {
   const n = series.length;
@@ -44,9 +57,12 @@ function chart(series, expected, scale, points, shiftIndex, width = 220, height 
 
 function unusualCell(a) {
   if (!a.points.length) return '<span class="an-none">None flagged</span>';
-  const list = a.points.map(p =>
-    fmtPeriod(p.period) + ' <span class="muted">(' + (p.direction === 'spike' ? '▲' : '▼') + ' ' +
-    num(p.actual) + ' vs ~' + num(p.expected) + ')</span>').join('<br>');
+  const list = a.points.map(p => {
+    const arrow = p.direction === 'spike' ? '▲' : '▼';
+    const cls = p.direction === 'spike' ? 'an-up' : 'an-down';
+    return '<span class="' + cls + '">' + arrow + '</span> ' + fmtPeriod(p.period) +
+      ': sold ' + num(p.actual) + ' <span class="muted">vs about ' + roughNum(p.expected) + ' expected</span>';
+  }).join('<br>');
   const highs = a.points.filter(p => p.severity === 'high').length;
   return '<strong>' + a.points.length + ' month' + (a.points.length === 1 ? '' : 's') + '</strong>' +
     (highs ? ' <span class="muted">· ' + highs + ' strong</span>' : '') +
@@ -65,14 +81,14 @@ function latestCell(a) {
   const l = a.latest;
   if (!l) return '&mdash;';
   if (!l.isAnomaly) {
-    return '<span class="badge good">NORMAL</span><div class="sub">' + fmtPeriod(l.period) + ' ' + num(l.actual) +
-      ', near expected</div>';
+    return '<span class="badge good">NORMAL</span><div class="sub">' + fmtPeriod(l.period) + ': sold ' +
+      num(l.actual) + ', near expected</div>';
   }
   const strong = Math.abs(l.z) >= 3;
   const label = (l.direction === 'spike' ? 'SPIKE' : 'DROP');
   return '<span class="badge ' + (strong ? 'critical' : 'warning') + '">&#9888; ' + label + '</span>' +
-    '<div class="sub">' + fmtPeriod(l.period) + ': ' + num(l.actual) + ' vs ~' + num(l.expected) +
-    ' expected (z ' + l.z.toFixed(1) + ')</div>';
+    '<div class="sub">' + fmtPeriod(l.period) + ': sold ' + num(l.actual) + ' vs about ' + roughNum(l.expected) +
+    ' expected &middot; ' + swingPhrase(l.z) + '</div>';
 }
 
 export function renderAnomalyView(demand) {

@@ -254,9 +254,11 @@
   /* Anomaly detection (v4) */
   #anomalyBody table { min-width: 800px; }
   #anomalyBody .sub { font-size: 10px; color: var(--text-secondary); font-weight: 400; margin-top: 3px; white-space: normal; line-height: 1.4; }
-  #anomalyBody td { text-align: left; vertical-align: top; }
+  #anomalyBody th, #anomalyBody td { text-align: left; vertical-align: top; }
   #anomalyBody .muted { color: var(--text-muted); }
   #anomalyBody .an-none { color: var(--good); font-weight: 600; font-size: 12px; }
+  #anomalyBody .an-up { color: var(--critical); font-weight: 700; }
+  #anomalyBody .an-down { color: var(--serious); font-weight: 700; }
   svg.anomaly-spark .an-band  { fill: color-mix(in srgb, var(--series-blue) 12%, transparent); stroke: none; }
   svg.anomaly-spark .an-line  { fill: none; stroke: var(--series-blue); stroke-width: 1.4; }
   svg.anomaly-spark .an-shift { stroke: var(--warning); stroke-width: 1.4; stroke-dasharray: 3 2; }
