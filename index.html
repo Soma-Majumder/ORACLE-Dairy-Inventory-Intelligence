@@ -298,6 +298,59 @@
     background: color-mix(in srgb, var(--sage) 14%, var(--surface-1));
     border: 1px solid color-mix(in srgb, var(--sage) 35%, var(--border)); border-radius: 10px;
   }
+
+  /* Ask ORACLE (v7) */
+  .agent-key-setup { margin-bottom: 14px; }
+  .agent-key-note { font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 8px; }
+  .agent-key-note a { color: var(--series-blue); }
+  .agent-key-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .agent-key-row input[type=password] {
+    flex: 1; min-width: 200px; font: inherit; font-size: 13px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); color: var(--text-primary);
+  }
+  .agent-key-row select, .agent-model-pick select {
+    font: inherit; font-size: 12px; padding: 7px 8px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
+  }
+  .agent-key-saved { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .agent-key-saved .ok { color: var(--good); font-weight: 700; }
+  .agent-model-pick { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .agent-ask { display: flex; gap: 8px; align-items: flex-end; }
+  .agent-ask textarea {
+    flex: 1; font: inherit; font-size: 14px; padding: 9px 11px; border-radius: 8px; resize: vertical;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+  .agent-ask .btn { white-space: nowrap; }
+  .agent-examples { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
+  .agent-chip {
+    font: inherit; font-size: 12px; cursor: pointer; padding: 6px 11px; border-radius: 16px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+  }
+  .agent-chip:hover { border-color: color-mix(in srgb, var(--sage) 45%, var(--border)); color: var(--text-primary); }
+  #agentAnswer:not(:empty) { margin-top: 16px; }
+  .agent-running { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-secondary); }
+  .agent-spin {
+    width: 13px; height: 13px; border-radius: 50%; flex: none;
+    border: 2px solid var(--gridline); border-top-color: var(--series-blue); animation: agentspin .7s linear infinite;
+  }
+  @keyframes agentspin { to { transform: rotate(360deg); } }
+  .agent-steps { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .agent-answer-body { font-size: 14px; line-height: 1.6; color: var(--text-primary); }
+  .agent-answer-body p { margin: 0 0 10px; }
+  .agent-answer-body p.md-h { font-weight: 700; margin: 14px 0 6px; }
+  .agent-answer-body ul, .agent-answer-body ol { margin: 0 0 10px; padding-left: 22px; }
+  .agent-answer-body li { margin-bottom: 4px; }
+  .agent-answer-body code { background: var(--gridline); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .agent-meta { margin-top: 12px; font-size: 11px; color: var(--text-muted); border-top: 1px solid var(--gridline); padding-top: 8px; }
+  .agent-error {
+    font-size: 13px; color: var(--text-primary); padding: 11px 13px; border-radius: 9px;
+    background: color-mix(in srgb, var(--critical) 10%, var(--surface-1));
+    border: 1px solid color-mix(in srgb, var(--critical) 45%, var(--border));
+  }
+  @media (max-width: 620px) {
+    .agent-ask { flex-direction: column; align-items: stretch; }
+    .agent-model-pick { margin-left: 0; }
+  }
   svg.anomaly-spark .an-band  { fill: color-mix(in srgb, var(--series-blue) 12%, transparent); stroke: none; }
   svg.anomaly-spark .an-line  { fill: none; stroke: var(--series-blue); stroke-width: 1.4; }
   svg.anomaly-spark .an-shift { stroke: var(--warning); stroke-width: 1.4; stroke-dasharray: 3 2; }
@@ -479,9 +532,23 @@
         <div id="wiResults"></div>
       </div>
     </section>
+
+    <section class="category hidden" id="sectionAgent">
+      <h2 class="days-until-run-out"><span class="dot neutral"></span>Ask ORACLE <span class="tag">v7</span></h2>
+      <p class="subtitle" id="agentSubtitle"></p>
+      <div class="card">
+        <div id="agentKeySetup" class="agent-key-setup"></div>
+        <div class="agent-ask">
+          <textarea id="agentInput" rows="2" placeholder="Ask about forecasts, stockout risk, unusual months, drivers, or what-if scenarios…"></textarea>
+          <button class="btn primary" id="agentAskBtn">Ask</button>
+        </div>
+        <div class="agent-examples" id="agentExamples"></div>
+        <div id="agentAnswer"></div>
+      </div>
+    </section>
   </div>
 
-  <footer class="privacy">Your spreadsheet is processed entirely in this browser tab — nothing is uploaded to a server.</footer>
+  <footer class="privacy">Your spreadsheet is processed entirely in this browser tab and never uploaded to a server. The one exception is <strong>Ask ORACLE</strong>: when you use it, your question and the figures its tools return are sent directly to the Anthropic API with your own key.</footer>
 </div>
 
 <script type="module" src="js/dashboard.js"></script>

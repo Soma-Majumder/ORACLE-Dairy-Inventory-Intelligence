@@ -15,6 +15,7 @@ import { renderAnomalyView } from './anomaly-view.js';
 import { buildFactorIndex } from './reasoning.js';
 import { renderReasoningView } from './reasoning-view.js';
 import { renderWhatIfView } from './whatif-view.js';
+import { renderAgentView } from './agent-view.js';
 
 const state = {
   rows: [],
@@ -50,6 +51,11 @@ function renderPredictivePanels() {
   renderAnomalyView(state.demand);
   renderReasoningView(state.demand, state.factorIndex);
   renderWhatIfView(state.demand, state.stockByProduct);
+  renderAgentView({
+    demand: state.demand,
+    stockByProduct: state.stockByProduct,
+    factorIndex: state.factorIndex
+  });
 }
 
 const $ = (id) => document.getElementById(id);
