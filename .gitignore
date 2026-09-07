@@ -2,9 +2,9 @@
 node_modules/
 .DS_Store
 
-# API keys are never stored in files — the agent reads a bring-your-own key
-# from the browser's localStorage. These lines are just a safety net in case
-# tooling is added later.
+# Secrets live in .env (local) and the deploy platform's env vars — never
+# committed. .env.example is the committed template.
 .env
 .env.*
+!.env.example
 *.local

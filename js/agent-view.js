@@ -1,10 +1,8 @@
-// "Ask ORACLE" panel (v7). Bring-your-own-key: the API key lives only in
-// this browser's localStorage; questions + the figures the tools return go
-// directly to the Google Gemini API, not to any server we run.
+// "Ask ORACLE" panel (v7). The browser POSTs the conversation to /api/ask;
+// the server holds the Gemini key. No key setup in the UI.
 import { escapeHtml } from './utils.js';
 import { ask, MODEL_SUGGESTIONS, DEFAULT_MODEL } from './agent.js';
 
-const KEY_STORE = 'oracle_agent_key';
 const MODEL_STORE = 'oracle_agent_model';
 
 const EXAMPLES = [
@@ -18,17 +16,9 @@ let ctx = null;
 let wired = false;
 let busy = false;
 
-function getKey() {
-  try {
-    const k = localStorage.getItem(KEY_STORE) || '';
-    return k.startsWith('sk-ant-') ? '' : k; // ignore a key left over from a non-Gemini build
-  } catch (e) { return ''; }
-}
-function setKey(v) { try { v ? localStorage.setItem(KEY_STORE, v) : localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ } }
 function getModel() {
   try {
     const m = localStorage.getItem(MODEL_STORE) || '';
-    // Ignore a value left over from a non-Gemini build.
     return /^gemini/i.test(m) ? m : DEFAULT_MODEL;
   } catch (e) { return DEFAULT_MODEL; }
 }
@@ -72,36 +62,18 @@ const TOOL_LABEL = {
   run_what_if: 'running the what-if scenario'
 };
 
-function renderKeySetup() {
+function renderSetup() {
   const el = document.getElementById('agentKeySetup');
   if (!el) return;
-  const key = getKey();
-  const model = getModel();
   const datalist = '<datalist id="agentModelList">' +
     MODEL_SUGGESTIONS.map(m => '<option value="' + escapeHtml(m) + '"></option>').join('') + '</datalist>';
-  const modelField = '<input type="text" id="agentModel" list="agentModelList" spellcheck="false" ' +
-    'value="' + escapeHtml(model) + '" />' + datalist;
-
-  if (key) {
-    el.innerHTML =
-      '<div class="agent-key-saved">' +
-      '<span class="ok">&#10003;</span> API key saved in this browser ' +
-      '<button type="button" class="btn text" id="agentKeyChange">change</button>' +
-      '<span class="agent-model-pick">Model ' + modelField + '</span>' +
-      '</div>';
-  } else {
-    el.innerHTML =
-      '<div class="agent-key-form">' +
-      '<p class="agent-key-note">Ask ORACLE uses the Google Gemini API. Paste your own API key ' +
-      '(<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>) — ' +
-      'it is stored only in this browser. Your question and the figures the tools return are sent to Google. ' +
-      'Do not paste your key anywhere else.</p>' +
-      '<div class="agent-key-row">' +
-      '<input type="password" id="agentKeyInput" placeholder="AIza..." autocomplete="off" />' +
-      modelField +
-      '<button type="button" class="btn primary" id="agentKeySave">Save</button>' +
-      '</div></div>';
-  }
+  el.innerHTML =
+    '<div class="agent-key-saved">' +
+    '<span class="ok">&#10003;</span> Runs on the site’s Gemini key — no setup needed.' +
+    '<span class="agent-model-pick">Model ' +
+    '<input type="text" id="agentModel" list="agentModelList" spellcheck="false" value="' +
+    escapeHtml(getModel()) + '" /></span>' + datalist +
+    '</div>';
 }
 
 function renderExamples() {
@@ -118,8 +90,6 @@ function setAnswer(html) {
 
 async function runAsk(question) {
   if (busy) return;
-  const key = getKey();
-  if (!key) { renderKeySetup(); setAnswer('<div class="agent-error">Add your Gemini API key first.</div>'); return; }
   if (!question.trim()) return;
   if (!ctx || !ctx.demand) { setAnswer('<div class="agent-error">Load the dataset first.</div>'); return; }
 
@@ -133,7 +103,7 @@ async function runAsk(question) {
   paint();
 
   try {
-    const res = await ask(question, ctx, { apiKey: key, model: getModel() }, (evt) => {
+    const res = await ask(question, ctx, { model: getModel() }, (evt) => {
       if (evt.type === 'tool') { steps.push(TOOL_LABEL[evt.name] || evt.name); paint(); }
     });
     const toolLine = res.toolsUsed.length
@@ -160,14 +130,6 @@ function wire() {
 
   card.addEventListener('click', (e) => {
     const t = e.target;
-    if (t.id === 'agentKeySave') {
-      const v = document.getElementById('agentKeyInput').value.trim();
-      const m = document.getElementById('agentModel');
-      if (m && m.value.trim()) setModel(m.value.trim());
-      if (v) { setKey(v); renderKeySetup(); }
-      return;
-    }
-    if (t.id === 'agentKeyChange') { setKey(''); renderKeySetup(); return; }
     if (t.id === 'agentAskBtn') { runAsk(document.getElementById('agentInput').value); return; }
     if (t.classList.contains('agent-chip')) {
       document.getElementById('agentInput').value = t.dataset.q;
@@ -199,7 +161,7 @@ export function renderAgentView(context) {
   subtitle.innerHTML = 'Ask a plain-English question. ORACLE picks which of its engines to run ' +
     '(forecast, stockout, anomalies, drivers, what-if) and answers with their numbers — it never makes figures up.';
 
-  renderKeySetup();
+  renderSetup();
   renderExamples();
   if (!wired) { wire(); wired = true; }
 }

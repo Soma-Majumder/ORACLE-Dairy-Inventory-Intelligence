@@ -5,116 +5,21 @@
 // which of ORACLE's engines to run; the engines (v2–v6) do every calculation.
 // The model never invents a number — it only calls tools and narrates results.
 //
-// Bring-your-own-key: the browser calls the Google Gemini API directly with
-// the user's own API key. Nothing goes through a server we run.
+// The browser POSTs the conversation to /api/ask; the server holds the
+// Gemini API key. The engine tools below still run here in the browser —
+// only the model credential lives server-side.
 // ---------------------------------------------------------------------------
 import { forecastProduct } from './forecast.js';
 import { assessStockout } from './stockout.js';
 import { detectProductAnomalies } from './anomaly.js';
 import { topDrivers, explainAnomaly, explainForecast } from './reasoning.js';
 import { compareScenario, recommendReorder } from './whatif.js';
+import { DEFAULT_MODEL } from './agent-tools.js';
 
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const PROXY_URL = '/api/ask';
 const MAX_TURNS = 6;
 
-// Editable in the UI — Google's model names change often. These are the
-// suggestions; the key field accepts any model id.
-export const MODEL_SUGGESTIONS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
-
-const SYSTEM_PROMPT = `You are ORACLE, an operations analyst for a dairy inventory system.
-
-Answer the user's question using ONLY the tools provided. Every figure in your answer must come from a tool result — never estimate, extrapolate, or invent numbers. If the tools cannot answer something, say so plainly.
-
-The data: 10 dairy products, ~4 years of monthly demand history, current stock on hand, and per-transaction breakdowns by sales channel, customer region, and brand. It is a synthetic demo dataset, so driver breakdowns can look noisy or evenly split — say so when that is the case.
-
-How to work:
-- Call get_overview first when you need to know which products exist or get the lay of the land.
-- Call only the tools you need. For a "which products are at risk" question, get_overview alone is usually enough.
-- Product names must match exactly (e.g. "Ice Cream", "Buttermilk"). get_overview lists them.
-
-How to answer:
-- Lead with the direct answer, then the key supporting numbers.
-- Be concise. Short paragraphs or bullet lists. No preamble like "Great question".
-- Round sensibly: "about 2,300", not "2,317.4".
-- If the question is ambiguous about product or time window, pick a reasonable default and state it.
-- Format with Markdown: ** for key figures, - for bullets.`;
-
-// --- tool definitions ------------------------------------------------
-
-export const TOOLS = [
-  {
-    name: 'get_overview',
-    description: 'Headline numbers for every product at once: stock on hand, forecast demand per month, ' +
-      '30-day stockout risk, and how many unusual months each has. Call this first for any broad question ' +
-      '("what is at risk", "what should I look at") or to get the exact product names.',
-    input_schema: { type: 'object', properties: {}, required: [] }
-  },
-  {
-    name: 'get_forecast',
-    description: 'Demand forecast for one product: the next 6 months (expected + range), which model was ' +
-      'chosen and how accurate it tested, the trend, and a plain-English summary. Use for questions about ' +
-      'expected/future demand or how much will sell.',
-    input_schema: {
-      type: 'object',
-      properties: { product: { type: 'string', description: 'Exact product name' } },
-      required: ['product']
-    }
-  },
-  {
-    name: 'get_stockout_risk',
-    description: 'Stockout simulation for one product over a horizon: the chance of running out, when it ' +
-      'likely runs out, the risk level, and expected unmet demand. Use for "will we run out", "how long ' +
-      'until", "how risky is X".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        product: { type: 'string', description: 'Exact product name' },
-        horizon_days: { type: 'number', description: 'Look-ahead window in days (default 30)' }
-      },
-      required: ['product']
-    }
-  },
-  {
-    name: 'get_anomalies',
-    description: 'Unusual months in one product\'s demand history: the spikes and drops (actual vs expected), ' +
-      'any lasting shift in the baseline, and whether the most recent month is unusual. Use for "was there ' +
-      'anything strange", "any unusual activity", "did demand change".',
-    input_schema: {
-      type: 'object',
-      properties: { product: { type: 'string', description: 'Exact product name' } },
-      required: ['product']
-    }
-  },
-  {
-    name: 'explain_drivers',
-    description: 'What drives one product\'s demand: the split by sales channel / customer region / brand, ' +
-      'which parts are trending up or down, and a suggested cause for each unusual month. Use for "why", ' +
-      '"what is behind", "where do sales come from".',
-    input_schema: {
-      type: 'object',
-      properties: { product: { type: 'string', description: 'Exact product name' } },
-      required: ['product']
-    }
-  },
-  {
-    name: 'run_what_if',
-    description: 'Re-run the stockout simulation for one product with changed assumptions, versus the ' +
-      'baseline. Use for "what if demand rises 20%", "what if I order X", "what if the delivery is late". ' +
-      'Also returns the order size that would reach a 95% service level.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        product: { type: 'string', description: 'Exact product name' },
-        demand_change_pct: { type: 'number', description: 'Percent change vs forecast, e.g. 20 or -15 (default 0)' },
-        order_qty: { type: 'number', description: 'Units of an incoming order (default 0)' },
-        delivery_days: { type: 'number', description: 'Days until that order arrives (default 7)' },
-        horizon_days: { type: 'number', description: 'Look-ahead window in days (default 30)' }
-      },
-      required: ['product']
-    }
-  }
-];
+export { DEFAULT_MODEL, MODEL_SUGGESTIONS, TOOL_DEFS as TOOLS } from './agent-tools.js';
 
 // --- tool execution ------------------------------------------------
 
@@ -325,63 +230,40 @@ export function executeTool(name, input, context) {
 
 // --- API call + agentic loop ---------------------------------------
 
-// ORACLE's tools in Gemini's functionDeclarations shape (drop `parameters`
-// entirely for a no-argument tool, which Gemini requires).
-const FUNCTION_DECLARATIONS = TOOLS.map(t => {
-  const decl = { name: t.name, description: t.description };
-  if (t.input_schema && Object.keys(t.input_schema.properties || {}).length) {
-    decl.parameters = t.input_schema;
-  }
-  return decl;
-});
-
-async function callGemini({ apiKey, model, contents }) {
+async function callProxy({ model, contents }) {
   let res;
   try {
-    res = await fetch(API_BASE + encodeURIComponent(model) + ':generateContent', {
+    res = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents,
-        tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
-        generationConfig: { maxOutputTokens: 8192, temperature: 0.4 }
-      })
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model, contents })
     });
   } catch (e) {
-    throw new Error('Could not reach the Gemini API. Check your connection.');
+    throw new Error('Could not reach the server. Is it running?');
   }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* ignore */ }
   if (!res.ok) {
-    let detail = '';
-    try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
-    const known = {
-      400: 'The request was rejected' + (detail ? ': ' + detail : ' (often an invalid API key or model name).'),
-      403: 'That API key was rejected, or it lacks access to this model.',
-      404: 'Model "' + model + '" was not found — check the model name.',
-      429: 'Rate limited by Google — wait a moment and retry.',
-      500: 'Google had a server error — retry shortly.',
-      503: 'The Gemini model is overloaded right now — retry in a bit.'
-    };
-    throw new Error(known[res.status] || ('Gemini API error ' + res.status + (detail ? ': ' + detail : '')));
+    throw new Error((data && data.error) || ('Server error ' + res.status));
   }
-  return res.json();
+  return data || {};
 }
 
 /**
  * @param question  the user's plain-English question
  * @param context   { demand, stockByProduct, factorIndex }
- * @param config    { apiKey, model }
+ * @param config    { model }
  * @param onEvent   optional (evt) => void  — { type:'tool', name, input }
  * @returns { answer, toolsUsed: string[], usage: {input, output}, model }
  */
 export async function ask(question, context, config, onEvent) {
-  const model = config.model || DEFAULT_MODEL;
+  const model = (config && config.model) || DEFAULT_MODEL;
   const contents = [{ role: 'user', parts: [{ text: String(question).trim() }] }];
   const usage = { input: 0, output: 0 };
   const toolsUsed = [];
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const resp = await callGemini({ apiKey: config.apiKey, model, contents });
+    const resp = await callProxy({ model, contents });
     usage.input += resp.usageMetadata?.promptTokenCount || 0;
     usage.output += resp.usageMetadata?.candidatesTokenCount || 0;
 
