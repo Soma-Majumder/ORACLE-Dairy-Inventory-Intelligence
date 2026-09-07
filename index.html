@@ -308,8 +308,8 @@
     flex: 1; min-width: 200px; font: inherit; font-size: 13px; padding: 8px 10px;
     border: 1px solid var(--border); border-radius: 7px; background: var(--surface-2); color: var(--text-primary);
   }
-  .agent-key-row select, .agent-model-pick select {
-    font: inherit; font-size: 12px; padding: 7px 8px; border-radius: 7px;
+  .agent-key-row #agentModel, .agent-model-pick #agentModel {
+    font: inherit; font-size: 12px; padding: 7px 8px; border-radius: 7px; width: 150px;
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
   }
   .agent-key-saved { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -548,7 +548,7 @@
     </section>
   </div>
 
-  <footer class="privacy">Your spreadsheet is processed entirely in this browser tab and never uploaded to a server. The one exception is <strong>Ask ORACLE</strong>: when you use it, your question and the figures its tools return are sent directly to the Anthropic API with your own key.</footer>
+  <footer class="privacy">Your spreadsheet is processed entirely in this browser tab and never uploaded to a server. The one exception is <strong>Ask ORACLE</strong>: when you use it, your question and the figures its tools return are sent directly to the Google Gemini API with your own key.</footer>
 </div>
 
 <script type="module" src="js/dashboard.js"></script>

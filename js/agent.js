@@ -5,8 +5,8 @@
 // which of ORACLE's engines to run; the engines (v2–v6) do every calculation.
 // The model never invents a number — it only calls tools and narrates results.
 //
-// Bring-your-own-key: the browser calls the Anthropic API directly with the
-// user's own API key. Nothing goes through a server we run.
+// Bring-your-own-key: the browser calls the Google Gemini API directly with
+// the user's own API key. Nothing goes through a server we run.
 // ---------------------------------------------------------------------------
 import { forecastProduct } from './forecast.js';
 import { assessStockout } from './stockout.js';
@@ -14,16 +14,13 @@ import { detectProductAnomalies } from './anomaly.js';
 import { topDrivers, explainAnomaly, explainForecast } from './reasoning.js';
 import { compareScenario, recommendReorder } from './whatif.js';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const MAX_TURNS = 6;
 
-export const MODELS = [
-  { id: 'claude-opus-5', label: 'Claude Opus 5 — most capable' },
-  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5 — faster, lower cost' },
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5 — fastest, lowest cost' }
-];
-export const DEFAULT_MODEL = 'claude-opus-5';
+// Editable in the UI — Google's model names change often. These are the
+// suggestions; the key field accepts any model id.
+export const MODEL_SUGGESTIONS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'];
+export const DEFAULT_MODEL = 'gemini-2.5-flash';
 
 const SYSTEM_PROMPT = `You are ORACLE, an operations analyst for a dairy inventory system.
 
@@ -328,34 +325,44 @@ export function executeTool(name, input, context) {
 
 // --- API call + agentic loop ---------------------------------------
 
-async function callAnthropic({ apiKey, model, messages }) {
+// ORACLE's tools in Gemini's functionDeclarations shape (drop `parameters`
+// entirely for a no-argument tool, which Gemini requires).
+const FUNCTION_DECLARATIONS = TOOLS.map(t => {
+  const decl = { name: t.name, description: t.description };
+  if (t.input_schema && Object.keys(t.input_schema.properties || {}).length) {
+    decl.parameters = t.input_schema;
+  }
+  return decl;
+});
+
+async function callGemini({ apiKey, model, contents }) {
   let res;
   try {
-    res = await fetch(API_URL, {
+    res = await fetch(API_BASE + encodeURIComponent(model) + ':generateContent', {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({ model, max_tokens: 8000, system: SYSTEM_PROMPT, messages, tools: TOOLS })
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents,
+        tools: [{ functionDeclarations: FUNCTION_DECLARATIONS }],
+        generationConfig: { maxOutputTokens: 8192, temperature: 0.4 }
+      })
     });
   } catch (e) {
-    throw new Error('Could not reach the Anthropic API. Check your connection.');
+    throw new Error('Could not reach the Gemini API. Check your connection.');
   }
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.json()).error?.message || ''; } catch (e) { /* ignore */ }
     const known = {
-      400: 'The request was rejected' + (detail ? ': ' + detail : '.'),
-      401: 'That API key was rejected. Check it and try again.',
-      403: 'This API key is not allowed to use that model.',
-      429: 'Rate limited by Anthropic — wait a moment and retry.',
-      500: 'Anthropic had a server error — retry shortly.',
-      529: 'Anthropic is overloaded right now — retry in a bit.'
+      400: 'The request was rejected' + (detail ? ': ' + detail : ' (often an invalid API key or model name).'),
+      403: 'That API key was rejected, or it lacks access to this model.',
+      404: 'Model "' + model + '" was not found — check the model name.',
+      429: 'Rate limited by Google — wait a moment and retry.',
+      500: 'Google had a server error — retry shortly.',
+      503: 'The Gemini model is overloaded right now — retry in a bit.'
     };
-    throw new Error(known[res.status] || ('Anthropic API error ' + res.status + (detail ? ': ' + detail : '')));
+    throw new Error(known[res.status] || ('Gemini API error ' + res.status + (detail ? ': ' + detail : '')));
   }
   return res.json();
 }
@@ -368,43 +375,50 @@ async function callAnthropic({ apiKey, model, messages }) {
  * @returns { answer, toolsUsed: string[], usage: {input, output}, model }
  */
 export async function ask(question, context, config, onEvent) {
-  const messages = [{ role: 'user', content: String(question).trim() }];
+  const model = config.model || DEFAULT_MODEL;
+  const contents = [{ role: 'user', parts: [{ text: String(question).trim() }] }];
   const usage = { input: 0, output: 0 };
   const toolsUsed = [];
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const resp = await callAnthropic({ apiKey: config.apiKey, model: config.model || DEFAULT_MODEL, messages });
-    usage.input += resp.usage?.input_tokens || 0;
-    usage.output += resp.usage?.output_tokens || 0;
+    const resp = await callGemini({ apiKey: config.apiKey, model, contents });
+    usage.input += resp.usageMetadata?.promptTokenCount || 0;
+    usage.output += resp.usageMetadata?.candidatesTokenCount || 0;
 
-    if (resp.stop_reason === 'refusal') {
-      return { answer: 'The model declined to answer that request.', toolsUsed, usage, model: resp.model };
-    }
-    if (resp.stop_reason !== 'tool_use') {
-      const answer = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-      return { answer: answer || '(no answer)', toolsUsed, usage, model: resp.model };
+    const cand = resp.candidates && resp.candidates[0];
+    if (!cand) return { answer: '(no response from the model)', toolsUsed, usage, model };
+    if (cand.finishReason === 'SAFETY' || cand.finishReason === 'PROHIBITED_CONTENT') {
+      return { answer: 'The model declined to answer that request.', toolsUsed, usage, model };
     }
 
-    messages.push({ role: 'assistant', content: resp.content });
-    const results = [];
-    for (const block of resp.content) {
-      if (block.type !== 'tool_use') continue;
-      toolsUsed.push(block.name);
-      if (onEvent) onEvent({ type: 'tool', name: block.name, input: block.input });
+    const parts = (cand.content && cand.content.parts) || [];
+    const calls = parts.filter(p => p.functionCall);
+
+    if (!calls.length) {
+      const answer = parts.filter(p => p.text).map(p => p.text).join('').trim();
+      return { answer: answer || '(no answer)', toolsUsed, usage, model };
+    }
+
+    contents.push({ role: 'model', parts: calls });
+    const responseParts = [];
+    for (const p of calls) {
+      const name = p.functionCall.name;
+      const args = p.functionCall.args || {};
+      toolsUsed.push(name);
+      if (onEvent) onEvent({ type: 'tool', name, input: args });
       let out;
       try {
-        out = executeTool(block.name, block.input || {}, context);
+        out = executeTool(name, args, context);
       } catch (e) {
-        results.push({ type: 'tool_result', tool_use_id: block.id, content: 'Error: ' + e.message, is_error: true });
-        continue;
+        out = { error: 'tool failed: ' + (e.message || String(e)) };
       }
-      results.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(out) });
+      responseParts.push({ functionResponse: { name, response: out } });
     }
-    messages.push({ role: 'user', content: results });
+    contents.push({ role: 'user', parts: responseParts });
   }
 
   return {
     answer: '(ORACLE used all its steps without finishing — try asking something more specific.)',
-    toolsUsed, usage
+    toolsUsed, usage, model
   };
 }

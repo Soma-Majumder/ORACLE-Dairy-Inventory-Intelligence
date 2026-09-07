@@ -1,8 +1,8 @@
 // "Ask ORACLE" panel (v7). Bring-your-own-key: the API key lives only in
 // this browser's localStorage; questions + the figures the tools return go
-// directly to the Anthropic API, not to any server we run.
+// directly to the Google Gemini API, not to any server we run.
 import { escapeHtml } from './utils.js';
-import { ask, MODELS, DEFAULT_MODEL } from './agent.js';
+import { ask, MODEL_SUGGESTIONS, DEFAULT_MODEL } from './agent.js';
 
 const KEY_STORE = 'oracle_agent_key';
 const MODEL_STORE = 'oracle_agent_model';
@@ -18,9 +18,20 @@ let ctx = null;
 let wired = false;
 let busy = false;
 
-function getKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+function getKey() {
+  try {
+    const k = localStorage.getItem(KEY_STORE) || '';
+    return k.startsWith('sk-ant-') ? '' : k; // ignore a key left over from a non-Gemini build
+  } catch (e) { return ''; }
+}
 function setKey(v) { try { v ? localStorage.setItem(KEY_STORE, v) : localStorage.removeItem(KEY_STORE); } catch (e) { /* ignore */ } }
-function getModel() { try { return localStorage.getItem(MODEL_STORE) || DEFAULT_MODEL; } catch (e) { return DEFAULT_MODEL; } }
+function getModel() {
+  try {
+    const m = localStorage.getItem(MODEL_STORE) || '';
+    // Ignore a value left over from a non-Gemini build.
+    return /^gemini/i.test(m) ? m : DEFAULT_MODEL;
+  } catch (e) { return DEFAULT_MODEL; }
+}
 function setModel(v) { try { localStorage.setItem(MODEL_STORE, v); } catch (e) { /* ignore */ } }
 
 // --- tiny Markdown renderer (bold, code, headings, lists, paragraphs) ---
@@ -66,25 +77,28 @@ function renderKeySetup() {
   if (!el) return;
   const key = getKey();
   const model = getModel();
-  const modelOpts = MODELS.map(m =>
-    '<option value="' + m.id + '"' + (m.id === model ? ' selected' : '') + '>' + escapeHtml(m.label) + '</option>').join('');
+  const datalist = '<datalist id="agentModelList">' +
+    MODEL_SUGGESTIONS.map(m => '<option value="' + escapeHtml(m) + '"></option>').join('') + '</datalist>';
+  const modelField = '<input type="text" id="agentModel" list="agentModelList" spellcheck="false" ' +
+    'value="' + escapeHtml(model) + '" />' + datalist;
 
   if (key) {
     el.innerHTML =
       '<div class="agent-key-saved">' +
       '<span class="ok">&#10003;</span> API key saved in this browser ' +
       '<button type="button" class="btn text" id="agentKeyChange">change</button>' +
-      '<span class="agent-model-pick">Model <select id="agentModel">' + modelOpts + '</select></span>' +
+      '<span class="agent-model-pick">Model ' + modelField + '</span>' +
       '</div>';
   } else {
     el.innerHTML =
       '<div class="agent-key-form">' +
-      '<p class="agent-key-note">Ask ORACLE uses the Anthropic API. Paste your own API key ' +
-      '(<a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>) — ' +
-      'it is stored only in this browser. Your question and the figures the tools return are sent to Anthropic.</p>' +
+      '<p class="agent-key-note">Ask ORACLE uses the Google Gemini API. Paste your own API key ' +
+      '(<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>) — ' +
+      'it is stored only in this browser. Your question and the figures the tools return are sent to Google. ' +
+      'Do not paste your key anywhere else.</p>' +
       '<div class="agent-key-row">' +
-      '<input type="password" id="agentKeyInput" placeholder="sk-ant-..." autocomplete="off" />' +
-      '<select id="agentModel">' + modelOpts + '</select>' +
+      '<input type="password" id="agentKeyInput" placeholder="AIza..." autocomplete="off" />' +
+      modelField +
       '<button type="button" class="btn primary" id="agentKeySave">Save</button>' +
       '</div></div>';
   }
@@ -105,7 +119,7 @@ function setAnswer(html) {
 async function runAsk(question) {
   if (busy) return;
   const key = getKey();
-  if (!key) { renderKeySetup(); setAnswer('<div class="agent-error">Add your Anthropic API key first.</div>'); return; }
+  if (!key) { renderKeySetup(); setAnswer('<div class="agent-error">Add your Gemini API key first.</div>'); return; }
   if (!question.trim()) return;
   if (!ctx || !ctx.demand) { setAnswer('<div class="agent-error">Load the dataset first.</div>'); return; }
 
@@ -149,7 +163,7 @@ function wire() {
     if (t.id === 'agentKeySave') {
       const v = document.getElementById('agentKeyInput').value.trim();
       const m = document.getElementById('agentModel');
-      if (m) setModel(m.value);
+      if (m && m.value.trim()) setModel(m.value.trim());
       if (v) { setKey(v); renderKeySetup(); }
       return;
     }
@@ -161,7 +175,7 @@ function wire() {
     }
   });
   card.addEventListener('change', (e) => {
-    if (e.target.id === 'agentModel') setModel(e.target.value);
+    if (e.target.id === 'agentModel' && e.target.value.trim()) setModel(e.target.value.trim());
   });
   card.addEventListener('keydown', (e) => {
     if (e.target.id === 'agentInput' && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
