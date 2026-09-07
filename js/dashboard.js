@@ -12,6 +12,8 @@ import { buildDemandSeries } from './timeseries.js';
 import { renderDemandPreview } from './demand-preview.js';
 import { renderStockoutView } from './stockout-view.js';
 import { renderAnomalyView } from './anomaly-view.js';
+import { buildFactorIndex } from './reasoning.js';
+import { renderReasoningView } from './reasoning-view.js';
 
 const state = {
   rows: [],
@@ -20,7 +22,8 @@ const state = {
   reviewed: new Set(),
   referenceDate: null,
   demand: null,          // output of buildDemandSeries when the bundled dataset is loaded
-  stockByProduct: null   // current stock summed across brands, keyed by base product name
+  stockByProduct: null,  // current stock summed across brands, keyed by base product name
+  factorIndex: null      // per-product transactions by channel/region/brand (v5)
 };
 
 // "Milk (Amul)" -> "Milk"
@@ -44,6 +47,7 @@ function renderPredictivePanels() {
   const horizon = Number($('stockoutHorizon') && $('stockoutHorizon').value) || 30;
   renderStockoutView(state.demand, state.stockByProduct, horizon);
   renderAnomalyView(state.demand);
+  renderReasoningView(state.demand, state.factorIndex);
 }
 
 const $ = (id) => document.getElementById(id);
@@ -83,6 +87,7 @@ async function loadFile(file) {
     const normalized = normalizeInventoryRows(json);
     state.demand = null;
     state.stockByProduct = null;
+    state.factorIndex = null;
     renderPredictivePanels();
     applyInventory(normalized, file.name);
   } catch (err) {
@@ -102,9 +107,11 @@ async function loadOpenSourceDataset() {
     const label = 'dairy_dataset.csv (' + aggregated.length +
       ' products by brand, latest batch each' + asOf + ')';
 
-    // Demand history (v2 data-prep) + current stock by product (v3 join).
+    // Demand history (v2 data-prep) + current stock by product (v3 join)
+    // + per-product factor breakdown for reasoning (v5).
     state.demand = buildDemandSeries(rawRows, { bucket: 'month' });
     state.stockByProduct = sumStockByProduct(aggregated);
+    state.factorIndex = buildFactorIndex(rawRows);
 
     applyInventory(normalized, label, referenceDate);
     renderPredictivePanels();
@@ -426,6 +433,7 @@ function init() {
   $('newFileBtn').addEventListener('click', () => {
     state.rows = []; state.columns = {}; state.reviewed = new Set();
     state.referenceDate = null; state.demand = null; state.stockByProduct = null;
+    state.factorIndex = null;
     fileInput.value = '';
     clearError();
     renderPredictivePanels();
