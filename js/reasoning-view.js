@@ -19,19 +19,26 @@ function driversCell(drivers) {
     ? 'Mostly <strong>' + escapeHtml(ch.dominant.category) + '</strong> (' + ch.dominant.share + '%)'
     : 'Fairly even across ' + ch.top.map(c => escapeHtml(c.category)).join(', ');
 
-  const brandTxt = br.dominant
-    ? 'Top brand ' + escapeHtml(br.dominant.category) + ' (' + br.dominant.share + '%)'
-    : '';
-  const regionTxt = rg.dominant
-    ? 'biggest region ' + escapeHtml(rg.dominant.category) + ' (' + rg.dominant.share + '%)'
-    : '';
-
   const movers = [ch.mover, rg.mover, br.mover].filter(Boolean).map(m =>
     escapeHtml(m.category) + ' ' + (m.growthPctYr > 0 ? '+' : '') + m.growthPctYr + '%/yr');
 
+  const items = [];
+  if (br.dominant) {
+    items.push('<span class="dl-label">Top brand:</span> ' +
+      escapeHtml(br.dominant.category) + ' (' + br.dominant.share + '%)');
+  }
+  if (rg.dominant) {
+    items.push('<span class="dl-label">Biggest region:</span> ' +
+      escapeHtml(rg.dominant.category) + ' (' + rg.dominant.share + '%)');
+  }
+  if (movers.length) {
+    items.push('<span class="dl-label">Trending:</span> ' + movers.join(', '));
+  }
+
   return '<div>' + channelTxt + '</div>' +
-    '<div class="sub">' + [brandTxt, regionTxt].filter(Boolean).join(' &middot; ') + '</div>' +
-    (movers.length ? '<div class="sub">Shifting: ' + movers.join(', ') + '</div>' : '');
+    (items.length
+      ? '<ul class="drivers-list">' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>'
+      : '');
 }
 
 function whyCell(anomaly, rec, periods) {
