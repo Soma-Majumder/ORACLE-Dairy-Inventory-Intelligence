@@ -1,3 +1,10 @@
 .claude/settings.local.json
 node_modules/
 .DS_Store
+
+# Secrets live in .env (local) and the deploy platform's env vars — never
+# committed. .env.example is the committed template.
+.env
+.env.*
+!.env.example
+*.local

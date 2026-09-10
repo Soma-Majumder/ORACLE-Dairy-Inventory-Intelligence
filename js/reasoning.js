@@ -193,8 +193,10 @@ export function explainAnomaly(rec, period, periods, deviation) {
  * @param summary       a buildDemandSeries() product.summary
  * @param forecastPeriods  ["2023-01", ...] the months being forecast
  */
-export function explainForecast(summary, forecastPeriods) {
-  const level = Math.round(summary.recentMeanDemand || summary.mean);
+export function explainForecast(summary, forecastPeriods, levelOverride) {
+  const level = Math.round(
+    levelOverride != null && isFinite(levelOverride) ? levelOverride : (summary.recentMeanDemand || summary.mean)
+  );
   const tr = summary.trendPctPerYear;
 
   let trendTxt;

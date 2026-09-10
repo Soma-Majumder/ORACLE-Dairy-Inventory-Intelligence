@@ -1,0 +1,13 @@
+{
+  "name": "oracle-dairy-inventory-intelligence",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ORACLE — dairy inventory decision-intelligence dashboard. The /api/ask endpoint (Ask ORACLE, v7) is the only server-side piece.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node .claude/serve.mjs"
+  }
+}
