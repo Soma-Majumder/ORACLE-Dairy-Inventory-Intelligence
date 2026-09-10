@@ -24,13 +24,13 @@
 // The rate limiter is in-memory: it resets on a serverless cold start and is
 // not shared across instances. For a hard guarantee put a KV store in front.
 // ---------------------------------------------------------------------------
-import { SYSTEM_PROMPT, DEFAULT_MODEL } from './agent-tools.js';
+import { SYSTEM_PROMPT, BRIEFING_PROMPT, DEFAULT_MODEL } from './agent-tools.js';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 // --- limits ---
 const MAX_QUESTION = 2000;
-const MAX_ANALYSIS_BYTES = 60_000;
+const MAX_ANALYSIS_BYTES = 90_000;   // "Investigate" bundles a full deep-dive per product
 
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_IP = 12;
@@ -84,7 +84,8 @@ function sanitizeAskPayload(body) {
   try { analysisJson = JSON.stringify(analysis); } catch (e) { return null; }
   if (analysisJson.length > MAX_ANALYSIS_BYTES) return null;
 
-  return { question, analysisJson };
+  const task = body.task === 'investigate' ? 'investigate' : null;
+  return { question, analysisJson, task };
 }
 
 function buildUserMessage(question, analysisJson) {
@@ -100,7 +101,17 @@ function stripReasoning(s) {
     .trim();
 }
 
-async function callOpenRouter(apiKey, model, question, analysisJson, referer) {
+// The free router occasionally routes a chat request to a guard/classifier
+// model (which only replies "User Safety: safe"). If that happens, retry once
+// forcing a real free chat model.
+const FREE_CHAT_MODELS = [
+  'google/gemma-4-31b-it:free',
+  'nvidia/nemotron-3-super-120b-a12b:free',
+  'nex-agi/nex-n2.5-mini:free'
+];
+const REFUSAL = 'I can only help with questions about this dairy inventory data.';
+
+async function oneCall(apiKey, model, system, userMessage, maxTokens, referer) {
   let res, text;
   try {
     res = await fetch(OPENROUTER_URL, {
@@ -113,22 +124,39 @@ async function callOpenRouter(apiKey, model, question, analysisJson, referer) {
       },
       body: JSON.stringify({
         model,
+        models: model === DEFAULT_MODEL ? FREE_CHAT_MODELS : undefined,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserMessage(question, analysisJson) }
+          { role: 'system', content: system },
+          { role: 'user', content: userMessage }
         ],
         temperature: 0.3,
-        max_tokens: 1600,
-        reasoning: { exclude: true }   // keep chain-of-thought out of the response
+        max_tokens: maxTokens
+        // No `reasoning` param: OpenRouter keeps any chain-of-thought in a
+        // separate `reasoning` field that we never read; `enabled:false` is
+        // rejected by reasoning-mandatory models. The <think> strip below
+        // handles models that inline their reasoning into `content`.
       })
     });
     text = await res.text();
   } catch (e) {
-    return { status: 502, json: { error: 'Could not reach OpenRouter.' } };
+    return { transportError: true };
   }
-
   let data = null;
   try { data = JSON.parse(text); } catch (e) { /* leave null */ }
+  return { res, data };
+}
+
+async function callOpenRouter(apiKey, model, question, analysisJson, referer, task) {
+  const system = task === 'investigate' ? BRIEFING_PROMPT : SYSTEM_PROMPT;
+  // Generous headroom: some free models reason before answering and that
+  // reasoning counts against the budget. Free tier, so cost is not a factor.
+  const maxTokens = task === 'investigate' ? 4000 : 2400;
+  const userMessage = buildUserMessage(question, analysisJson);
+
+  let attempt = await oneCall(apiKey, model, system, userMessage, maxTokens, referer);
+  if (attempt.transportError) return { status: 502, json: { error: 'Could not reach OpenRouter.' } };
+
+  let { res, data } = attempt;
 
   if (!res.ok) {
     const detail = (data && data.error && data.error.message) || '';
@@ -145,22 +173,42 @@ async function callOpenRouter(apiKey, model, question, analysisJson, referer) {
     return { status: res.status === 429 ? 429 : 502, json: { error: msg } };
   }
 
-  const choice = data && data.choices && data.choices[0];
-  const answer = stripReasoning(choice && choice.message && choice.message.content);
+  let answer = extractAnswer(data);
+  let used = (data && data.model) || model;
+  const isBad = (a, m) => !a ||
+    /safety|guard|moderation|classif/i.test(m || '') ||
+    (a.length < 40 && a.toLowerCase() !== REFUSAL.toLowerCase());
+
+  // Retry on a specific free chat model (up to 2) if the router misfired.
+  for (let i = 0; isBad(answer, used) && i < FREE_CHAT_MODELS.length && i < 2; i++) {
+    const r = await oneCall(apiKey, FREE_CHAT_MODELS[i], system, userMessage, maxTokens, referer);
+    if (r.transportError || !r.res.ok) continue;
+    const a = extractAnswer(r.data);
+    if (a) { answer = a; used = (r.data && r.data.model) || FREE_CHAT_MODELS[i]; data = r.data; }
+  }
+
   if (!answer) {
-    return { status: 502, json: { error: 'The free model returned an empty answer — try again or rephrase.' } };
+    return { status: 502, json: { error: 'The model returned an empty answer — the free tier can be flaky; try again.' } };
   }
 
   return {
     status: 200,
     json: {
       answer,
-      model: (data && data.model) || model,
+      model: used,
       usage: data && data.usage
         ? { input: data.usage.prompt_tokens || 0, output: data.usage.completion_tokens || 0 }
         : null
     }
   };
+}
+
+function extractAnswer(data) {
+  const choice = data && data.choices && data.choices[0];
+  const m = choice && choice.message;
+  let raw = m && m.content;
+  if (Array.isArray(raw)) raw = raw.map(p => (p && p.text) || '').join('');
+  return stripReasoning(raw);
 }
 
 /**
@@ -189,5 +237,6 @@ export async function handleAskRequest({ method, ip, origin, host, bodyText, env
 
   const model = env.OPENROUTER_MODEL || DEFAULT_MODEL;
   const referer = origin || (host ? 'https://' + host : undefined);
-  return callOpenRouter(env.OPENROUTER_API_KEY, model, payload.question, payload.analysisJson, referer);
+  return callOpenRouter(
+    env.OPENROUTER_API_KEY, model, payload.question, payload.analysisJson, referer, payload.task);
 }

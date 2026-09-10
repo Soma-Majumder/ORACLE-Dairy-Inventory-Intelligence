@@ -5,6 +5,9 @@
 // project's Environment Variables, never in the client.
 import { handleAskRequest } from '../js/openrouter-proxy.mjs';
 
+// Free models can be slow; allow up to the platform max (60s on Vercel Hobby).
+export const maxDuration = 60;
+
 async function readBody(req) {
   if (typeof req.body === 'string') return req.body;
   if (req.body && typeof req.body === 'object') return JSON.stringify(req.body);
