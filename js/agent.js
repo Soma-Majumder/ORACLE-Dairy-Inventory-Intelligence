@@ -1,25 +1,21 @@
 // ---------------------------------------------------------------------------
-// Ask ORACLE — natural-language agent (ORACLE v7).
+// Ask ORACLE — natural-language insight feature (ORACLE v7).
 //
-// A tool-use agent: the language model interprets the question and decides
-// which of ORACLE's engines to run; the engines (v2–v6) do every calculation.
-// The model never invents a number — it only calls tools and narrates results.
+// Compute-then-explain: the browser runs the v2–v6 engines to produce a full
+// analysis bundle (every number calculated here), then POSTs { question,
+// analysis } to /api/ask. The server makes one OpenRouter call; the model
+// only turns that analysis into plain English for a non-technical reader.
+// It never calculates, predicts, or invents a figure.
 //
-// The browser POSTs the conversation to /api/ask; the server holds the
-// Gemini API key. The engine tools below still run here in the browser —
-// only the model credential lives server-side.
+// The OPENROUTER_API_KEY lives server-side only.
 // ---------------------------------------------------------------------------
 import { forecastProduct } from './forecast.js';
 import { assessStockout } from './stockout.js';
 import { detectProductAnomalies } from './anomaly.js';
 import { topDrivers, explainAnomaly, explainForecast } from './reasoning.js';
 import { compareScenario, recommendReorder } from './whatif.js';
-import { DEFAULT_MODEL } from './agent-tools.js';
 
 const PROXY_URL = '/api/ask';
-const MAX_TURNS = 6;
-
-export { DEFAULT_MODEL, MODEL_SUGGESTIONS, TOOL_DEFS as TOOLS } from './agent-tools.js';
 
 // --- tool execution ------------------------------------------------
 
@@ -213,94 +209,117 @@ function toolWhatIf(input, context) {
   };
 }
 
-const DISPATCH = {
-  get_overview: (input, context) => toolOverview(context),
-  get_forecast: toolForecast,
-  get_stockout_risk: toolStockout,
-  get_anomalies: toolAnomalies,
-  explain_drivers: toolDrivers,
-  run_what_if: toolWhatIf
-};
+// --- gathering the analysis bundle -------------------------------
 
-export function executeTool(name, input, context) {
-  const fn = DISPATCH[name];
-  if (!fn) return { error: 'Unknown tool: ' + name };
-  return fn(input, context);
+// Products whose name appears in the question — as a whole word/phrase, so
+// "Buttermilk" doesn't also pull in "Milk" and "Butter".
+function productsInQuestion(question, context) {
+  const q = String(question).toLowerCase();
+  return context.demand.products
+    .filter(p => {
+      const n = p.product.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
+      return new RegExp('(^|[^a-z])' + n + '([^a-z]|$)').test(q);
+    })
+    .map(p => p.product);
 }
 
-// --- API call + agentic loop ---------------------------------------
+// A what-if question → scenario knobs, or null if it isn't one.
+function detectWhatIf(question) {
+  const q = String(question).toLowerCase();
+  const isWhatIf = /\bwhat if\b|\bif (?:demand|sales)\b|\bsuppose\b|\bscenario\b|\brises?\b|\bdrops?\b|\bincreases?\b|\bfalls?\b|\bwere to\b|\bdouble\b|\bhalve\b/.test(q)
+    || /\border\b[^.]*\b(units|kg|litres|liters)\b/.test(q);
+  if (!isWhatIf) return null;
+  const pctM = q.match(/(\d{1,3})\s*%/);
+  const down = /\b(drop|down|fall|fell|less|lower|decrease|declin|reduc|halve)/.test(q);
+  const qtyM = q.match(/(\d[\d,]{2,})\s*(?:units|kg|litres|liters)?/);
+  const leadM = q.match(/(\d{1,2})\s*days?/);
+  let pct = pctM ? Number(pctM[1]) * (down ? -1 : 1) : 0;
+  if (!pctM && /\bdouble\b/.test(q)) pct = 100;
+  if (!pctM && /\bhalve\b/.test(q)) pct = -50;
+  return {
+    demand_change_pct: pct,
+    order_qty: qtyM ? Number(qtyM[1].replace(/,/g, '')) : 0,
+    delivery_days: leadM ? Number(leadM[1]) : 7
+  };
+}
 
-async function callProxy({ model, contents }) {
+/**
+ * Run the engines and assemble everything the LLM might need to answer.
+ * @param question  plain-English question
+ * @param context   { demand, stockByProduct, factorIndex }
+ * @param onStep     optional (label) => void  — progress labels for the UI
+ * @returns a plain object safe to JSON.stringify
+ */
+export function gatherAnalysis(question, context, onStep) {
+  const step = (label) => { if (onStep) onStep(label); };
+  const q = String(question).trim();
+  const analysis = { question: q };
+
+  step('scanning all products');
+  analysis.overview = toolOverview(context);
+
+  const targets = productsInQuestion(q, context);
+  if (targets.length) {
+    analysis.products = {};
+    for (const name of targets) {
+      step('analysing ' + name);
+      analysis.products[name] = {
+        forecast: toolForecast({ product: name }, context),
+        stockout: toolStockout({ product: name }, context),
+        anomalies: toolAnomalies({ product: name }, context),
+        drivers: toolDrivers({ product: name }, context)
+      };
+    }
+  }
+
+  const wi = detectWhatIf(q);
+  if (wi && targets.length) {
+    step('running the what-if scenario');
+    analysis.scenario = { assumptions: wi, byProduct: {} };
+    for (const name of targets) {
+      analysis.scenario.byProduct[name] = toolWhatIf({ product: name, ...wi }, context);
+    }
+  }
+
+  analysis._sections = ['all-product overview']
+    .concat(targets.map(n => n + ' deep-dive'))
+    .concat(wi && targets.length ? ['what-if scenario'] : []);
+  return analysis;
+}
+
+// --- the single server call --------------------------------------
+
+/**
+ * @param question  the user's plain-English question
+ * @param context   { demand, stockByProduct, factorIndex }
+ * @param onStep    optional (label) => void  — progress labels while gathering
+ * @returns { answer, sections: string[], usage: {input,output}|null, model }
+ */
+export async function ask(question, context, onStep) {
+  const analysis = gatherAnalysis(question, context, onStep);
+  if (onStep) onStep('writing the explanation (the free model can take 10–30s)');
+
   let res;
   try {
     res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model, contents })
+      body: JSON.stringify({ question: analysis.question, analysis })
     });
   } catch (e) {
     throw new Error('Could not reach the server. Is it running?');
   }
+
   let data = null;
   try { data = await res.json(); } catch (e) { /* ignore */ }
   if (!res.ok) {
     throw new Error((data && data.error) || ('Server error ' + res.status));
   }
-  return data || {};
-}
-
-/**
- * @param question  the user's plain-English question
- * @param context   { demand, stockByProduct, factorIndex }
- * @param config    { model }
- * @param onEvent   optional (evt) => void  — { type:'tool', name, input }
- * @returns { answer, toolsUsed: string[], usage: {input, output}, model }
- */
-export async function ask(question, context, config, onEvent) {
-  const model = (config && config.model) || DEFAULT_MODEL;
-  const contents = [{ role: 'user', parts: [{ text: String(question).trim() }] }];
-  const usage = { input: 0, output: 0 };
-  const toolsUsed = [];
-
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const resp = await callProxy({ model, contents });
-    usage.input += resp.usageMetadata?.promptTokenCount || 0;
-    usage.output += resp.usageMetadata?.candidatesTokenCount || 0;
-
-    const cand = resp.candidates && resp.candidates[0];
-    if (!cand) return { answer: '(no response from the model)', toolsUsed, usage, model };
-    if (cand.finishReason === 'SAFETY' || cand.finishReason === 'PROHIBITED_CONTENT') {
-      return { answer: 'The model declined to answer that request.', toolsUsed, usage, model };
-    }
-
-    const parts = (cand.content && cand.content.parts) || [];
-    const calls = parts.filter(p => p.functionCall);
-
-    if (!calls.length) {
-      const answer = parts.filter(p => p.text).map(p => p.text).join('').trim();
-      return { answer: answer || '(no answer)', toolsUsed, usage, model };
-    }
-
-    contents.push({ role: 'model', parts: calls });
-    const responseParts = [];
-    for (const p of calls) {
-      const name = p.functionCall.name;
-      const args = p.functionCall.args || {};
-      toolsUsed.push(name);
-      if (onEvent) onEvent({ type: 'tool', name, input: args });
-      let out;
-      try {
-        out = executeTool(name, args, context);
-      } catch (e) {
-        out = { error: 'tool failed: ' + (e.message || String(e)) };
-      }
-      responseParts.push({ functionResponse: { name, response: out } });
-    }
-    contents.push({ role: 'user', parts: responseParts });
-  }
 
   return {
-    answer: '(ORACLE used all its steps without finishing — try asking something more specific.)',
-    toolsUsed, usage, model
+    answer: (data && data.answer) || '(no answer)',
+    sections: analysis._sections,
+    usage: (data && data.usage) || null,
+    model: (data && data.model) || null
   };
 }

@@ -1,9 +1,9 @@
 // Vercel serverless function: POST /api/ask
 //
 // Thin wrapper around handleAskRequest — extracts what it needs from the
-// Vercel request and delegates. The GEMINI_API_KEY lives in the Vercel
+// Vercel request and delegates. OPENROUTER_API_KEY lives in the Vercel
 // project's Environment Variables, never in the client.
-import { handleAskRequest } from '../js/gemini-proxy.mjs';
+import { handleAskRequest } from '../js/openrouter-proxy.mjs';
 
 async function readBody(req) {
   if (typeof req.body === 'string') return req.body;

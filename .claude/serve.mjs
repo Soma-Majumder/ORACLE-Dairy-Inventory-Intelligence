@@ -1,12 +1,12 @@
 // Local dev server: static files + the /api/ask proxy for the v7 agent.
-// Reads GEMINI_API_KEY from the repo-root .env so the agent works locally
+// Reads OPENROUTER_API_KEY from the repo-root .env so the agent works locally
 // the same way it will on Vercel (which uses api/ask.mjs instead).
 import { createServer } from 'http';
 import { readFile } from 'fs/promises';
 import { readFileSync, existsSync } from 'fs';
 import { extname, join, normalize } from 'path';
 import { fileURLToPath } from 'url';
-import { handleAskRequest } from '../js/gemini-proxy.mjs';
+import { handleAskRequest } from '../js/openrouter-proxy.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -69,5 +69,5 @@ createServer(async (req, res) => {
   }
 }).listen(port, () => {
   console.log('serving on http://localhost:' + port +
-    (process.env.GEMINI_API_KEY ? '  (agent: GEMINI_API_KEY loaded)' : '  (agent: add GEMINI_API_KEY to .env)'));
+    (process.env.OPENROUTER_API_KEY ? '  (agent: OPENROUTER_API_KEY loaded)' : '  (agent: add OPENROUTER_API_KEY to .env)'));
 });

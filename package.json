@@ -9,8 +9,5 @@
   },
   "scripts": {
     "dev": "node .claude/serve.mjs"
-  },
-  "dependencies": {
-    "@google/genai": "^2.21.0"
   }
 }

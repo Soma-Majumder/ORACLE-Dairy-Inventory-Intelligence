@@ -1,28 +1,18 @@
-// "Ask ORACLE" panel (v7). The browser POSTs the conversation to /api/ask;
-// the server holds the Gemini key. No key setup in the UI.
+// "Ask ORACLE" panel (v7). The browser computes the analysis, then POSTs it
+// to /api/ask; the server holds the OpenRouter key. No key setup in the UI.
 import { escapeHtml } from './utils.js';
-import { ask, MODEL_SUGGESTIONS, DEFAULT_MODEL } from './agent.js';
-
-const MODEL_STORE = 'oracle_agent_model';
+import { ask } from './agent.js';
 
 const EXAMPLES = [
   'Which products are most at risk of running out?',
-  'What’s the demand forecast for Milk?',
+  'What’s the demand forecast for Milk, and what should I watch?',
   'Were there any unusual months for Cheese, and why?',
-  'What should I order for Buttermilk if demand rises 25%?'
+  'What happens to Buttermilk if demand rises 25%?'
 ];
 
 let ctx = null;
 let wired = false;
 let busy = false;
-
-function getModel() {
-  try {
-    const m = localStorage.getItem(MODEL_STORE) || '';
-    return /^gemini/i.test(m) ? m : DEFAULT_MODEL;
-  } catch (e) { return DEFAULT_MODEL; }
-}
-function setModel(v) { try { localStorage.setItem(MODEL_STORE, v); } catch (e) { /* ignore */ } }
 
 // --- tiny Markdown renderer (bold, code, headings, lists, paragraphs) ---
 function mdLite(src) {
@@ -53,26 +43,13 @@ function mdLite(src) {
   return html;
 }
 
-const TOOL_LABEL = {
-  get_overview: 'scanning all products',
-  get_forecast: 'checking the forecast',
-  get_stockout_risk: 'running the stockout simulation',
-  get_anomalies: 'looking for unusual months',
-  explain_drivers: 'breaking down the drivers',
-  run_what_if: 'running the what-if scenario'
-};
-
 function renderSetup() {
   const el = document.getElementById('agentKeySetup');
   if (!el) return;
-  const datalist = '<datalist id="agentModelList">' +
-    MODEL_SUGGESTIONS.map(m => '<option value="' + escapeHtml(m) + '"></option>').join('') + '</datalist>';
   el.innerHTML =
     '<div class="agent-key-saved">' +
-    '<span class="ok">&#10003;</span> Runs on the site’s Gemini key — no setup needed.' +
-    '<span class="agent-model-pick">Model ' +
-    '<input type="text" id="agentModel" list="agentModelList" spellcheck="false" value="' +
-    escapeHtml(getModel()) + '" /></span>' + datalist +
+    '<span class="ok">&#10003;</span> Runs on a free AI model via the site’s server — no setup needed. ' +
+    'ORACLE calculates every figure first; the AI only explains it.' +
     '</div>';
 }
 
@@ -98,22 +75,20 @@ async function runAsk(question) {
   const steps = [];
   const paint = () => setAnswer(
     '<div class="agent-running"><span class="agent-spin"></span> ' +
-    (steps.length ? escapeHtml(steps[steps.length - 1]) + '…' : 'thinking…') + '</div>' +
+    (steps.length ? escapeHtml(steps[steps.length - 1]) + '…' : 'working…') + '</div>' +
     (steps.length > 1 ? '<div class="agent-steps">' + steps.slice(0, -1).map(escapeHtml).join(' &middot; ') + '</div>' : ''));
   paint();
 
   try {
-    const res = await ask(question, ctx, { model: getModel() }, (evt) => {
-      if (evt.type === 'tool') { steps.push(TOOL_LABEL[evt.name] || evt.name); paint(); }
-    });
-    const toolLine = res.toolsUsed.length
-      ? 'Ran: ' + [...new Set(res.toolsUsed)].join(', ')
-      : 'Answered directly';
-    const tok = res.usage ? ' &middot; ~' + res.usage.input.toLocaleString() + ' in / ' +
-      res.usage.output.toLocaleString() + ' out tokens' : '';
+    const res = await ask(question, ctx, (label) => { steps.push(label); paint(); });
+    const analyzed = res.sections && res.sections.length
+      ? 'Analysed: ' + res.sections.join(', ') : '';
+    const tok = res.usage
+      ? ' &middot; ~' + res.usage.input.toLocaleString() + ' in / ' + res.usage.output.toLocaleString() + ' out tokens'
+      : '';
     setAnswer(
       '<div class="agent-answer-body">' + mdLite(res.answer) + '</div>' +
-      '<div class="agent-meta">' + escapeHtml(toolLine) + tok +
+      '<div class="agent-meta">' + escapeHtml(analyzed) + tok +
       (res.model ? ' &middot; ' + escapeHtml(res.model) : '') + '</div>');
   } catch (e) {
     setAnswer('<div class="agent-error">' + escapeHtml(e.message || String(e)) + '</div>');
@@ -136,9 +111,6 @@ function wire() {
       runAsk(t.dataset.q);
     }
   });
-  card.addEventListener('change', (e) => {
-    if (e.target.id === 'agentModel' && e.target.value.trim()) setModel(e.target.value.trim());
-  });
   card.addEventListener('keydown', (e) => {
     if (e.target.id === 'agentInput' && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       runAsk(document.getElementById('agentInput').value);
@@ -158,8 +130,8 @@ export function renderAgentView(context) {
   section.classList.remove('hidden');
   ctx = context;
 
-  subtitle.innerHTML = 'Ask a plain-English question. ORACLE picks which of its engines to run ' +
-    '(forecast, stockout, anomalies, drivers, what-if) and answers with their numbers — it never makes figures up.';
+  subtitle.innerHTML = 'Ask a plain-English question. ORACLE runs its engines on the data, then a language model ' +
+    'turns the results into a plain answer — what’s happening, why it matters, and what to watch. It never invents figures.';
 
   renderSetup();
   renderExamples();
