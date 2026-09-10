@@ -327,6 +327,16 @@
     border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
   }
   .agent-chip:hover { border-color: color-mix(in srgb, var(--sage) 45%, var(--border)); color: var(--text-primary); }
+  .agent-investigate {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px;
+    padding-top: 12px; border-top: 1px solid var(--gridline);
+  }
+  .agent-inv-label { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
+  .agent-investigate select {
+    font: inherit; font-size: 13px; padding: 7px 8px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
+  }
+  .agent-investigate .btn { font-size: 12px; padding: 7px 12px; }
   #agentAnswer:not(:empty) { margin-top: 16px; }
   .agent-running { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-secondary); }
   .agent-spin {
@@ -543,6 +553,12 @@
           <button class="btn primary" id="agentAskBtn">Ask</button>
         </div>
         <div class="agent-examples" id="agentExamples"></div>
+        <div class="agent-investigate" id="agentInvestigate">
+          <span class="agent-inv-label">or dig in:</span>
+          <select id="agentInvProduct" aria-label="Product to investigate"></select>
+          <button type="button" class="btn" id="agentInvBtn">Investigate product</button>
+          <button type="button" class="btn sage" id="agentTriageBtn">Investigate top risks</button>
+        </div>
         <div id="agentAnswer"></div>
       </div>
     </section>

@@ -287,27 +287,89 @@ export function gatherAnalysis(question, context, onStep) {
   return analysis;
 }
 
-// --- the single server call --------------------------------------
+// --- Investigate (v7b): full multi-engine deep-dive -------------
+
+// Every engine for one product, plus a default "+20% demand" scenario.
+function deepDive(name, context, step) {
+  if (step) step('investigating ' + name);
+  return {
+    forecast: toolForecast({ product: name }, context),
+    stockout: toolStockout({ product: name, horizon_days: 30 }, context),
+    anomalies: toolAnomalies({ product: name }, context),
+    drivers: toolDrivers({ product: name }, context),
+    demandShock20pct: toolWhatIf(
+      { product: name, demand_change_pct: 20, delivery_days: 7, horizon_days: 30 }, context)
+  };
+}
+
+// Rank products by how much they warrant attention, from the overview row.
+function rankByRisk(overview, count) {
+  return overview.products
+    .map(p => {
+      const pct = p.stockoutRisk
+        ? Number(String(p.stockoutRisk.chanceOfStockout30d).replace('%', '')) || 0 : 0;
+      const score = pct + (p.unusualMonths || 0) * 4 +
+        (p.recentMonthUnusual ? 25 : 0) + (p.baselineShift ? 12 : 0);
+      return { product: p.product, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, count)
+    .map(s => s.product);
+}
 
 /**
- * @param question  the user's plain-English question
- * @param context   { demand, stockByProduct, factorIndex }
- * @param onStep    optional (label) => void  — progress labels while gathering
- * @returns { answer, sections: string[], usage: {input,output}|null, model }
+ * @param target   { product: 'Curd' }  OR  { topRisks: 3 }
+ * @param context  { demand, stockByProduct, factorIndex }
+ * @param onStep   optional (label) => void
+ * @returns { answer, sections, usage, model }
  */
-export async function ask(question, context, onStep) {
-  const analysis = gatherAnalysis(question, context, onStep);
-  if (onStep) onStep('writing the explanation (the free model can take 10–30s)');
+export async function investigate(target, context, onStep) {
+  const step = (l) => { if (onStep) onStep(l); };
+  const overview = toolOverview(context);
 
+  let targets, headline;
+  if (target && target.product) {
+    targets = [target.product];
+    headline = 'Investigate ' + target.product + ' and give me a briefing.';
+  } else {
+    step('ranking products by risk');
+    targets = rankByRisk(overview, (target && target.topRisks) || 3);
+    headline = 'Investigate the highest-risk products (' + targets.join(', ') +
+      ') and give me a briefing.';
+  }
+
+  const analysis = {
+    question: headline,
+    mode: targets.length > 1 ? 'top-risk triage' : 'single-product investigation',
+    overview,
+    deepDives: {}
+  };
+  for (const name of targets) analysis.deepDives[name] = deepDive(name, context, step);
+  analysis._sections = ['all-product overview'].concat(targets.map(n => n + ' full deep-dive'));
+
+  step('writing the briefing (the free model can take up to a minute)');
+  return postAsk({ question: headline, analysis, task: 'investigate' }, analysis._sections);
+}
+
+// --- the single server call --------------------------------------
+
+async function postAsk(body, sections) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 75000);
   let res;
   try {
     res = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ question: analysis.question, analysis })
+      body: JSON.stringify(body),
+      signal: ctrl.signal
     });
   } catch (e) {
-    throw new Error('Could not reach the server. Is it running?');
+    throw new Error(e.name === 'AbortError'
+      ? 'The free model took too long — try again (it varies a lot).'
+      : 'Could not reach the server. Is it running?');
+  } finally {
+    clearTimeout(timer);
   }
 
   let data = null;
@@ -318,8 +380,20 @@ export async function ask(question, context, onStep) {
 
   return {
     answer: (data && data.answer) || '(no answer)',
-    sections: analysis._sections,
+    sections,
     usage: (data && data.usage) || null,
     model: (data && data.model) || null
   };
+}
+
+/**
+ * @param question  the user's plain-English question
+ * @param context   { demand, stockByProduct, factorIndex }
+ * @param onStep    optional (label) => void  — progress labels while gathering
+ * @returns { answer, sections: string[], usage: {input,output}|null, model }
+ */
+export async function ask(question, context, onStep) {
+  const analysis = gatherAnalysis(question, context, onStep);
+  if (onStep) onStep('writing the explanation (the free model can take up to a minute)');
+  return postAsk({ question: analysis.question, analysis }, analysis._sections);
 }
