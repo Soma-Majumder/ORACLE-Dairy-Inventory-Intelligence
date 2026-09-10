@@ -20,10 +20,11 @@
 // not shared across instances. For a hard guarantee, put a KV store
 // (Upstash / Vercel KV) in front. For a demo, layers 1–3 + 5 are the real
 // protection and this is a useful extra.
+//
+// Calls Gemini through Google's official @google/genai SDK.
 // ---------------------------------------------------------------------------
+import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT, TOOL_DEFS, TOOL_NAMES, DEFAULT_ALLOWED_MODELS } from './agent-tools.js';
-
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
 // --- limits ---
 const MAX_TURNS = 24;
@@ -101,45 +102,43 @@ function sanitizeContents(contents) {
   return out;
 }
 
-// --- the Gemini call ---
+// --- the Gemini call (official @google/genai SDK) ---
 async function callGemini(apiKey, model, contents) {
-  let res;
+  const ai = new GoogleGenAI({ apiKey });
+
+  let response;
   try {
-    res = await fetch(API_BASE + encodeURIComponent(model) + ':generateContent', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents,
-        tools: [{ functionDeclarations: TOOL_DEFS }],
-        generationConfig: { maxOutputTokens: 8192, temperature: 0.4 }
-      })
+    response = await ai.models.generateContent({
+      model,
+      contents,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        temperature: 0.4,
+        maxOutputTokens: 8192,
+        tools: [{ functionDeclarations: TOOL_DEFS }]
+      }
     });
   } catch (e) {
-    return { status: 502, json: { error: 'Could not reach the Gemini API.' } };
-  }
-
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch (e) { data = null; }
-
-  if (!res.ok) {
-    const detail = (data && data.error && data.error.message) || '';
+    const status = Number(e && e.status) || 0;
+    const detail = (e && e.message) || '';
     const msg = {
       400: 'Gemini rejected the request' + (detail ? ': ' + detail : '.'),
+      401: 'The server’s GEMINI_API_KEY was rejected — it is not a valid Gemini API key.',
       403: 'The server’s Gemini key was rejected or lacks access to this model.',
       404: 'Model "' + model + '" was not found.',
       429: 'Gemini rate limit reached — wait a moment and retry.',
       500: 'Gemini had a server error — retry shortly.',
       503: 'Gemini is overloaded right now — retry in a bit.'
-    }[res.status] || ('Gemini API error ' + res.status + (detail ? ': ' + detail : ''));
-    const passthrough = res.status === 429 ? 429 : 502;
-    return { status: passthrough, json: { error: msg } };
+    }[status] || ('Gemini API error' + (status ? ' ' + status : '') + (detail ? ': ' + detail : ''));
+    return { status: status === 429 ? 429 : 502, json: { error: msg } };
   }
 
   return {
     status: 200,
-    json: { candidates: (data && data.candidates) || [], usageMetadata: (data && data.usageMetadata) || null }
+    json: {
+      candidates: response.candidates || [],
+      usageMetadata: response.usageMetadata || null
+    }
   };
 }
 
